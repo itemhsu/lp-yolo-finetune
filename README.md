@@ -30,10 +30,8 @@
 | 檔案 | 內容 | 大小 | 下載 |
 |---|---|---|---|
 | `haug_base.zip` | Roboflow lp-det-v3-job3 base images + YOLO-pose labels（train 2,746 / val 222） | 235MB | [下載](https://github.com/itemhsu/lp-yolo-finetune/releases/download/v1.0/haug_base.zip) |
-| `new_labels_only.zip` | 偽標籤 YOLO-pose labels（train 4,459 / val 1,114）⚠️ 圖片須自備 LPD 資料 | 1.6MB | [下載](https://github.com/itemhsu/lp-yolo-finetune/releases/download/v1.0/new_labels_only.zip) |
-| `ab_new_labels_only.zip` | Cell AB 補強 labels（train 1,266 / val 183）⚠️ 圖片須自備 LPD 資料 | 422KB | [下載](https://github.com/itemhsu/lp-yolo-finetune/releases/download/v1.0/ab_new_labels_only.zip) |
-
-> ⚠️ `new` 和 `ab_new` 的圖片來自私有監控資料（LPD），不公開。若無 LPD 資料，可僅用 `haug_base` + v3 best.pt 繼續 fine-tune，效果略遜但可重現。
+| `new.zip` | 偽標籤 images + YOLO-pose labels（train 4,459 / val 1,114） | 1.2GB | [下載](https://github.com/itemhsu/lp-yolo-finetune/releases/download/v1.0/new.zip) |
+| `ab_new.zip` | Cell AB 補強 images + YOLO-pose labels（train 1,266 / val 183） | 277MB | [下載](https://github.com/itemhsu/lp-yolo-finetune/releases/download/v1.0/ab_new.zip) |
 
 ---
 
@@ -278,6 +276,23 @@ v4 vs v3 差異：新增 204 張，退化 103 張，**淨 +101**。
 | 1202（2024-12-02） | 157 | 116 (73.9%) | 110 (70.1%) | -6 |
 | w1111 | 133 | 102 (76.7%) | 94 (70.7%) | -8 |
 | **合計** | **654** | **526 (80.4%)** | **497 (76.0%)** | **-29** |
+
+> Two-step 在小測試集仍領先 4-8%，主因 PARSeq OCR 在這批測試圖讀取較穩定；v4 角點偵測框品質更好（LPD 大集合 IoU 修正後超越 two-step）。
+
+### 5.4 推論速度比較（FPS）
+
+測試環境：Intel CPU（2 threads per session），圖片解析度 800×450。
+
+| 管線 | 偵測模型 FPS（CPU） | 備註 |
+|---|---|---|
+| **Two-step** | **6.7 fps** | PlateDet.onnx（244MB，YOLOv4）+ PlateRectifier.onnx 串接 |
+| Merged-v2 | 23.0 fps | 9.8MB，單模型，3.4× faster |
+| Merged-v3 | 23.3 fps | 9.8MB，單模型，3.5× faster |
+| **Merged-v4** | **22.7 fps** | 9.8MB，單模型，**3.3× faster** |
+
+> 以上為純 YOLO ONNX 偵測推論時間，不含 PARSeq OCR。  
+> 端對端（偵測 + OCR）實測：three-way benchmark 4 管線並行約 **4.8 img/s**，single pipeline 可達 10+ img/s。  
+> Merged 系列推論比 Two-step 快 **3.3×**，且模型體積從 244MB+7.4MB 縮小到單一 9.8MB。
 
 > Two-step 在小測試集仍領先 4-8%，主因 PARSeq OCR 在這批測試圖表現較穩定；v4 角點偵測框已明顯更好（LPD 大集合 IoU 修正後超越 two-step），差距主要來自 OCR 末碼誤讀。
 
