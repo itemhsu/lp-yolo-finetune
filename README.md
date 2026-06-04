@@ -291,6 +291,22 @@ artifacts/
 | v3（ep59） | [best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.pt) | [best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.onnx) |
 | v2（ep30） | [best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v2-20260530-143438/best.pt) | [best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v2-20260530-143438/best.onnx) |
 
+### Two-step 基準管線模型（Git LFS）
+
+作為評估基準的兩段式偵測管線，也一併收錄：
+
+| 模型 | 說明 | 大小 | 下載 |
+|---|---|---|---|
+| `PlateDet.onnx` | YOLOv4 車牌 bbox 偵測器（Step 1） | 244 MB | [下載（LFS）](https://github.com/itemhsu/lp-yolo-finetune/raw/master/two_step_models/0x1PlateDet/PlateDet.onnx) |
+| `PlateRectifier.onnx` | 4 角點 keypoint regressor（Step 2） | 7.4 MB | [下載（LFS）](https://github.com/itemhsu/lp-yolo-finetune/raw/master/two_step_models/PlateRectifier.onnx) |
+
+Two-step 推論流程：
+```
+image → PlateDet.onnx (bbox) → crop → PlateRectifier.onnx (4 corners)
+      → perspective warp 400×120 → PARSeq OCR → plate string
+```
+推論程式：`benchmark_lpr_two_step_compare.py`（`decode_plate_det`, `preprocess_rectifier`, `warp_plate` 等核心函數）
+
 匯出指令：
 ```bash
 python -c "
