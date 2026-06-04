@@ -1,5 +1,7 @@
 # YOLOv26n-Pose 台灣車牌四角點偵測 — 調優紀錄
 
+**GitHub Repository：[https://github.com/itemhsu/lp-yolo-finetune](https://github.com/itemhsu/lp-yolo-finetune)**
+
 > 調優目標：以 **YOLOv26n-pose**（4 keypoint，kpt\_shape=[4,3]）偵測台灣車牌四角點，取代兩段式 Two-step pipeline（PlateDet + PlateRectifier），搭配 PARSeq OCR 做端對端車牌辨識。
 
 ---
@@ -253,7 +255,7 @@ v4 vs v3 差異：新增 204 張，退化 103 張，**淨 +101**。
 ## 6. 最終模型 Artifacts
 
 ```
-model/artifacts/
+artifacts/
 ├── yolo26n-merged-v2-20260530-143438/
 │   ├── best.pt     # SageMaker 30 epochs，mAP50(B)=0.8089
 │   └── best.onnx   # opset 17，9.8 MB
@@ -264,6 +266,12 @@ model/artifacts/
     ├── best.pt     # ep292，mAP50(B)=0.9267  ← 最終推薦
     └── best.onnx   # opset 17，9.8 MB
 ```
+
+下載連結（GitHub）：
+- [yolo26n-merged-v4-20260604/best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.onnx) ← **最終推薦（ONNX）**
+- [yolo26n-merged-v4-20260604/best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.pt) ← **最終推薦（PyTorch）**
+- [yolo26n-merged-v3-20260602/best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.onnx)
+- [yolo26n-merged-v2-20260530-143438/best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v2-20260530-143438/best.onnx)
 
 匯出指令：
 ```bash
