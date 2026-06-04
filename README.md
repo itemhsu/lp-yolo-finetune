@@ -254,24 +254,42 @@ v4 vs v3 差異：新增 204 張，退化 103 張，**淨 +101**。
 
 ## 6. 最終模型 Artifacts
 
+### 各版本差異對照
+
+| 版本 | 日期 | best epoch | 起始權重 | 資料集 | Train 筆數 | epochs | lr0 | freeze | mAP50(B) | mAP50(P) | val/box_loss | val/pose_loss |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **v2** | 2026-05-30 | ep30 | yolo26n_best.pt（SageMaker 原始） | haug_base + pseudo-label | 7,205 | 30 | 0.001 | 10 | 0.8089 | 0.6434 | — | — |
+| **v3** | 2026-06-02 | ep59 | v2 best.pt | merged_dataset（+ ab_new） | 8,471 | 30 | 0.0005 | 0 | 0.8528 | 0.6845 | — | — |
+| **v4** ★ | 2026-06-04 | ep292 | v3 best.pt | merged_v3_dataset | 8,471 | 300 | 0.0001 | 0 | **0.9267** | **0.8332** | 0.8686 | 1.034 |
+
+**關鍵差異說明：**
+
+- **v2 → v3**：加入 Cell AB 補強資料（1,266 張，two-step OCR 對但 merged 讀錯的案例）；解凍全部層（freeze=0）；降低 lr0 避免損毀 v2 權重。mAP50(P) +2.4%。
+- **v3 → v4**：同一資料集再跑 300 epochs，lr0 降至 0.0001（精細調整）。ep291 後 `close_mosaic=10` 啟動（最後 10 epoch 關閉馬賽克增強）。mAP50(B) +7.4%、mAP50(P) +14.9%。
+- **選 ep292 而非 ep300**：ep291 之後 val/pose_loss 快速上升（1.034 → 1.065），mAP50(P) 下滑（0.8332 → 0.8294）。ep292 為 YOLO fitness 峰值，與理論最佳 ep286 差距 < 0.001。
+
+### 檔案清單
+
 ```
 artifacts/
 ├── yolo26n-merged-v2-20260530-143438/
-│   ├── best.pt     # SageMaker 30 epochs，mAP50(B)=0.8089
-│   └── best.onnx   # opset 17，9.8 MB
+│   ├── best.pt    (5.7 MB)  ep30   mAP50(B)=0.8089  mAP50(P)=0.6434
+│   └── best.onnx  (9.8 MB)  opset17，onnxslim 壓縮
 ├── yolo26n-merged-v3-20260602/
-│   ├── best.pt     # ep59，mAP50(B)=0.8528
-│   └── best.onnx   # opset 17，9.8 MB
-└── yolo26n-merged-v4-20260604/
-    ├── best.pt     # ep292，mAP50(B)=0.9267  ← 最終推薦
-    └── best.onnx   # opset 17，9.8 MB
+│   ├── best.pt    (5.7 MB)  ep59   mAP50(B)=0.8528  mAP50(P)=0.6845
+│   └── best.onnx  (9.8 MB)  opset17，onnxslim 壓縮
+└── yolo26n-merged-v4-20260604/       ← 最終推薦
+    ├── best.pt    (5.8 MB)  ep292  mAP50(B)=0.9267  mAP50(P)=0.8332
+    └── best.onnx  (9.8 MB)  opset17，onnxslim 壓縮
 ```
 
-下載連結（GitHub）：
-- [yolo26n-merged-v4-20260604/best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.onnx) ← **最終推薦（ONNX）**
-- [yolo26n-merged-v4-20260604/best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.pt) ← **最終推薦（PyTorch）**
-- [yolo26n-merged-v3-20260602/best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.onnx)
-- [yolo26n-merged-v2-20260530-143438/best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v2-20260530-143438/best.onnx)
+### 下載連結（GitHub）
+
+| 版本 | PyTorch (.pt) | ONNX (.onnx) |
+|---|---|---|
+| **v4 ★ 最終推薦** | [best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.pt) | [best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.onnx) |
+| v3（ep59） | [best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.pt) | [best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.onnx) |
+| v2（ep30） | [best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v2-20260530-143438/best.pt) | [best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v2-20260530-143438/best.onnx) |
 
 匯出指令：
 ```bash
