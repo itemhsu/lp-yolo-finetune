@@ -1,0 +1,21 @@
+# Merged-v3 dataset = merged_dataset + truly-new Cell AB images
+# merged train: 7,205  ab_new train: 1,266  total: 8,471
+# merged val:   1,336    ab_new val:   183    total: 1,519
+
+path: /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/model/merged_v3_dataset
+
+train:
+  - /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/merged_dataset/haug_base/train/images
+  - /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/merged_dataset/new/train/images
+  - ab_new/train/images
+
+val:
+  - /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/merged_dataset/haug_base/val/images
+  - /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/merged_dataset/new/val/images
+  - ab_new/val/images
+
+kpt_shape: [4, 3]
+flip_idx: [0, 1, 2, 3]
+
+names:
+  0: license_plate
