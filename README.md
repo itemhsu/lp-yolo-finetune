@@ -427,54 +427,250 @@ model.export(format='onnx', imgsz=640, opset=17, simplify=True)
 
 ---
 
-## 10. 再訓練步驟
+## 10. 再訓練完整指南
 
-### 環境需求
+本節確保讀者可從零開始重現訓練，或在此基礎上繼續 fine-tune。
+
+---
+
+### 10.1 硬體與環境需求
+
+| 項目 | 最低需求 | 建議 |
+|---|---|---|
+| GPU | NVIDIA 8GB VRAM | 16GB+ |
+| RAM | 16GB | 32GB |
+| 磁碟空間 | 50GB（資料集 + 模型） | 100GB |
+| 訓練時間（v4 300ep） | ～14 小時（8GB GPU） | ～8 小時（16GB GPU） |
+| CUDA | 11.8+ | 12.x |
 
 ```bash
-pip install ultralytics>=8.4.41 onnxruntime opencv-python torch torchvision
+# 安裝 Python 依賴
+pip install ultralytics>=8.4.41 onnxruntime onnxslim \
+            opencv-python torch torchvision torchaudio \
+            pyyaml numpy
+
+# 驗證 GPU 可用
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-### 從 v3 重現 v4 訓練
+---
+
+### 10.2 需要的素材（訓練前必備）
+
+#### A. 起始模型權重
+
+從本 repo 下載 v3 best.pt（或 v4 best.pt 繼續訓練）：
 
 ```bash
-# 確認 v3 best.pt 存在
+# 下載 v3 best.pt（推薦作為起始權重繼續訓練）
+wget https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.pt \
+     -O artifacts/yolo26n-merged-v3-20260602/best.pt
+
+# 或下載 v4 best.pt 繼續 fine-tune
+wget https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.pt \
+     -O artifacts/yolo26n-merged-v4-20260604/best.pt
+```
+
+#### B. 訓練資料集
+
+資料集結構（`merged_v3_dataset/`）需自行建立，共三個來源合併：
+
+```
+merged_v3_dataset/
+├── data.yaml               ← 本 repo 已提供
+├── haug_base/              ← 來源 1
+│   ├── train/images/       (2,746 張)
+│   └── val/images/         (222 張)
+├── new/                    ← 來源 2（偽標籤）
+│   ├── train/images/       (4,459 張)
+│   └── val/images/         (1,114 張)
+└── ab_new/                 ← 來源 3（Cell AB 補強）
+    ├── train/images/       (1,266 張)
+    └── val/images/         (183 張)
+```
+
+**來源 1 — haug\_base（Roboflow 公開資料集）**
+
+```bash
+# lp-det-v3-job3 from Roboflow（需自行申請下載）
+# 下載後解壓，過濾掉 _h120/_h140/_h160 augmentation 變體，只留 base image
+python build_merged_dataset.py   # 整理 haug_base 目錄結構
+```
+
+**來源 2 — new（偽標籤，需有 LPD 原始圖）**
+
+偽標籤由 Two-step pipeline 自動標注，需有 LPD 車牌圖片庫：
+```bash
+# 1. 掃描 LPD 圖片庫，生成 lpd_results.csv
+python benchmark_lpd_batch.py \
+  --root /path/to/LPD \
+  --plate-det two_step_models/0x1PlateDet/PlateDet.onnx \
+  --rectifier two_step_models/PlateRectifier.onnx
+
+# 2. 從 lpd_results.csv 生成 YOLO-pose 偽標籤
+python build_yolo_ftn_dataset.py \
+  --csv lpd_results.csv \
+  --out merged_v3_dataset/new
+
+# 3. 建立 Cell AB 補強資料（Two-step OCR 對但 merged 讀不同的案例）
+python build_cellAB_dataset.py \
+  --csv lpd_results.csv \
+  --out merged_v3_dataset/ab_new
+```
+
+**若無 LPD 圖片庫，可直接用 v4 best.pt 推論，跳過偽標籤生成。**
+
+#### C. 確認 data.yaml 路徑正確
+
+```bash
+cat merged_v3_dataset/data.yaml
+# 將 path: 改為你的實際路徑
+# 或使用絕對路徑
+```
+
+---
+
+### 10.3 訓練步驟
+
+#### Step 1：從 v3 繼續訓練（重現 v4）
+
+```bash
+# 確認起始權重與資料集
 ls artifacts/yolo26n-merged-v3-20260602/best.pt
+ls merged_v3_dataset/data.yaml
 
-# 執行 300 epochs 訓練（約 8-10 小時，單 GPU）
+# 執行訓練（約 8-14 小時）
 python train_merged_v4.py
+```
 
-# 匯出最佳 checkpoint 為 ONNX
+`train_merged_v4.py` 內容：
+```python
+from ultralytics import YOLO
+model = YOLO("artifacts/yolo26n-merged-v3-20260602/best.pt")
+model.train(
+    data="merged_v3_dataset/data.yaml",
+    epochs=300,
+    imgsz=640,
+    batch=16,           # VRAM 不足時調低（8 或 4）
+    workers=4,
+    freeze=0,           # 全層解凍（fine-tune）
+    lr0=0.0001,         # 低 LR，避免過度改變 v3 權重
+    lrf=0.01,           # cosine 最終 LR = lr0 × lrf
+    warmup_epochs=3,
+    device=0,
+    project="runs/merged-v4",
+    name="train",
+    exist_ok=True,
+)
+```
+
+#### Step 2：監控訓練（即時 Dashboard）
+
+```bash
+# 另開 terminal，啟動 dashboard
+python merged_v4_dashboard.py --loop 15
+
+# 用瀏覽器開啟
+open merged_v4_dashboard.html   # macOS
+xdg-open merged_v4_dashboard.html  # Linux
+```
+
+Dashboard 顯示 Box Loss、Pose Loss、mAP50 即時曲線。
+
+#### Step 3：過擬合判斷，選最佳 checkpoint
+
+訓練完成後，檢查 `runs/merged-v4/train/results.csv`：
+
+```python
+import csv, numpy as np
+
+rows = list(csv.DictReader(open("runs/merged-v4/train/results.csv")))
+mAP_P = [float(r["metrics/mAP50(P)"]) for r in rows]
+vpose = [float(r["val/pose_loss"]) for r in rows]
+
+# 過擬合訊號：val/pose_loss 持續上升 + mAP50(P) 下滑
+peak_ep = np.argmax(mAP_P) + 1
+print(f"mAP50(P) 峰值：ep{peak_ep}  val/pose={vpose[peak_ep-1]:.4f}")
+```
+
+**選擇原則**：
+- `best.pt` = YOLO 自動選的 fitness 最高點（通常接近最佳）
+- 若 val/pose_loss 在 best.pt 已明顯上升，可考慮選更早的 epoch（需設 `save_period=N`）
+
+#### Step 4：匯出 ONNX
+
+```bash
 python -c "
 from ultralytics import YOLO
 model = YOLO('runs/merged-v4/train/weights/best.pt')
 model.export(format='onnx', imgsz=640, opset=17, simplify=True)
+print('Exported to runs/merged-v4/train/weights/best.onnx')
 "
-
-# 複製到 artifacts
-mkdir -p artifacts/yolo26n-merged-v4-YYYYMMDD
-cp runs/merged-v4/train/weights/best.pt artifacts/yolo26n-merged-v4-YYYYMMDD/
-cp runs/merged-v4/train/weights/best.onnx artifacts/yolo26n-merged-v4-YYYYMMDD/
 ```
 
-### 重跑完整 benchmark
+#### Step 5：存檔 Artifact
 
 ```bash
-# 四路 OCR benchmark（約 80 分鐘）
-python bench_four_way.py
+DATE=$(date +%Y%m%d)
+mkdir -p artifacts/yolo26n-merged-v5-${DATE}
+cp runs/merged-v4/train/weights/best.pt   artifacts/yolo26n-merged-v5-${DATE}/
+cp runs/merged-v4/train/weights/best.onnx artifacts/yolo26n-merged-v5-${DATE}/
+echo "Saved to artifacts/yolo26n-merged-v5-${DATE}/"
+```
+
+---
+
+### 10.4 Benchmark 評估
+
+```bash
+# 四路比較（Two-step vs v2 vs v3 vs 新版本）
+python bench_four_way.py \
+  --v4 artifacts/yolo26n-merged-v5-YYYYMMDD/best.onnx \
+  --out lpd_four_way_new.csv
 
 # IoU + minOCR 修正
 python recompute_iou_matches.py \
-  --csv lpd_four_way.csv \
-  --out lpd_four_way_iou.csv \
+  --csv lpd_four_way_new.csv \
+  --out lpd_four_way_new_iou.csv \
   --thresh 0.5 --min-ocr 4
 
 # 生成 HTML 報告
-python report_four_way.py
+python report_four_way.py \
+  --csv lpd_four_way_new_iou.csv \
+  --out lpd_four_way_new_report.html
 
-# 小測試集比較
+# 小測試集目視驗證
 python test_compare.py /path/to/testImg/XXXX \
+  --v4 artifacts/yolo26n-merged-v5-YYYYMMDD/best.onnx \
   --out test_compare_XXXX.html
+```
+
+---
+
+### 10.5 常見問題
+
+**Q：VRAM 不足（OOM）**
+```bash
+# 降低 batch size
+# 在 train_merged_v4.py 中修改：
+batch=8   # 或 batch=4
+```
+
+**Q：想保存中間 checkpoint 以便選最佳 epoch**
+```python
+# 在 model.train() 中加入：
+save_period=10   # 每 10 epoch 保存一次
+```
+
+**Q：只有 CPU，沒有 GPU**
+```python
+device="cpu"   # 訓練速度約慢 10-20 倍，不建議超過 30 epochs
+```
+
+**Q：從頭訓練（不繼承任何權重）**
+```python
+model = YOLO("yolo26n-pose.pt")   # 下載官方 nano pose 預訓練權重
+# lr0 改回 0.01，freeze=0，epochs 可設 100-200
 ```
 
 ### 訓練監控
