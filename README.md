@@ -376,19 +376,19 @@ model.export(format='onnx', imgsz=640, opset=17, simplify=True)
 
 | 原始時間 | 文件 | 摘要 |
 |---|---|---|
-| 2024-11-11 | `test_compare_1111.html` | **1111 測試集**（127 張，2024/11/11 拍攝）。Two-step 102/127 (80.3%) vs v4 99/127 (78.0%)。✓✓ 92張、僅TS對 10張、僅v4對 7張。 |
-| 2024-11-18 | `test_compare_1118.html` | **1118 測試集**（95 張，2024/11/18 拍攝）。Two-step 82/95 (86.3%) vs v4 78/95 (82.1%)。✓✓ 73張、僅TS對 9張、僅v4對 5張。 |
-| 2024-11-25 | `test_compare_1125.html` | **1125 測試集**（142 張，2024/11/25 拍攝）。Two-step 124/142 (87.3%) vs v4 116/142 (81.7%)。✓✓ 109張、僅TS對 15張、僅v4對 7張。 |
-| 2024-11-28 | `lpd_batch_plan.html` | **LPD 批次掃描規劃**。掃描 /LPD 下 23,222 張圖，4 管線（two-step / yolo26m / yolo26s / yolo26n）輸出 lpd_results.csv，含斷點續跑、PARSeq OCR、檔名子字串比對邏輯。 |
-| 2024-12-02 | `test_compare_1202.html` | **1202 測試集**（157 張，2024/12/02 拍攝）。Two-step 116/157 (73.9%) vs v4 110/157 (70.1%)。✓✓ 101張、僅TS對 15張、僅v4對 9張。整體準確率最低，圖片較難。 |
-| 2024-12-xx | `test_compare_w1111.html` | **w1111 測試集**（133 張，週間拍攝）。Two-step 102/133 (76.7%) vs v4 94/133 (70.7%)。✓✓ 85張、僅TS對 17張、僅v4對 9張。v4 差距最大（-6%）。 |
+| 2026-05-30 | `lpd_batch_plan.html` | **LPD 批次掃描規劃**。掃描 /LPD 下 23,222 張圖，4 管線（two-step / yolo26m / yolo26s / yolo26n）輸出 lpd_results.csv，含斷點續跑、PARSeq OCR、檔名子字串比對邏輯。 |
 | 2026-05-30 | `ocr_2x2_report.html` | **2×2 OCR 分析**（11,408 張，5 桶合併）。Cell 定義：two-step OCR 像車牌（^[0-9A-Z]{5-7}$）× two-step/YOLO OCR 是否相同。Cell 1（同字串）3,246，Cell 2（不同字串）5,906 → 驅動訓練資料選取。 |
 | 2026-05-30 | `yolo_ftn_dataset_report.html` | **Fine-tune 資料集報告**。最終 5,929 張（no_detect 692 + Cell2去重後 5,237）。Train 4,459 / Val 1,114 / Holdout 356（0721TW）。來源 A（yolo漏偵）最有訓練價值。 |
 | 2026-05-30 | `dataset_merge_plan.html` | **資料集合併規劃**。比較 5 種合併策略（直接合併、去aug合併、兩階段訓練等），選方案B（haug去augmentation後合併）以平衡資料分布，避免 hue 增強重複訓練。 |
 | 2026-05-30 | `yolo26n_finetune_plan.html` | **Fine-tune 策略規劃**。以 2×2 矩陣分析訓練格的價值：TF 格（two-step 對/YOLO 錯）最高價值，OCR match 作為 corner 正確性的代理指標，偽標籤生成邏輯。 |
 | 2026-05-30 | `merged_v3_plan_cellAB.html` | **Merged-v3 Cell AB 訓練計劃**。Cell AB = two-step OCR 像車牌但 merged 讀不同（3,872 張）。分析 AB 根本原因（keypoint warp 精度差）、以 two-step corners 為 GT fine-tune v2 → v3。 |
-| 2026-06-02 | `merged_v4_dashboard.html` | **v4 訓練 Live Dashboard**。連續顯示 v2（ep1-30）+ v3（ep31-60）+ v4（ep61-360）完整曲線。JS polling 每 10 秒更新，資料不變時不重繪（避免閃爍）。 |
+| 2026-06-02 | `merged_v4_dashboard.html` | **v4 訓練 Live Dashboard**（v4 訓練期間產生）。連續顯示 v2（ep1-30）+ v3（ep31-60）+ v4（ep61-360）完整曲線。JS polling 每 10 秒更新，資料不變時不重繪（避免閃爍）。 |
 | 2026-06-04 | `lpd_four_way_report.html` | **四路比較報告**（23,222 張，IoU+minOCR修正）。Two-step 4,901 (21.1%) → v2 4,772 → v3 4,869 → **v4 4,970 (21.4%)**。v4 首次超越 two-step，v4 vs v3 淨增益 +101 張。 |
+| 2026-06-04 | `test_compare_1111.html` | **1111 資料夾測試**（127 張）。Two-step 102/127 (80.3%) vs v4 99/127 (78.0%)。✓✓ 92張、僅TS對 10張、僅v4對 7張。 |
+| 2026-06-04 | `test_compare_1118.html` | **1118 資料夾測試**（95 張）。Two-step 82/95 (86.3%) vs v4 78/95 (82.1%)。✓✓ 73張、僅TS對 9張、僅v4對 5張。 |
+| 2026-06-04 | `test_compare_1125.html` | **1125 資料夾測試**（142 張）。Two-step 124/142 (87.3%) vs v4 116/142 (81.7%)。✓✓ 109張、僅TS對 15張、僅v4對 7張。 |
+| 2026-06-04 | `test_compare_1202.html` | **1202 資料夾測試**（157 張）。Two-step 116/157 (73.9%) vs v4 110/157 (70.1%)。✓✓ 101張、僅TS對 15張、僅v4對 9張。整體準確率最低，圖片較難。 |
+| 2026-06-04 | `test_compare_w1111.html` | **w1111 資料夾測試**（133 張）。Two-step 102/133 (76.7%) vs v4 94/133 (70.7%)。✓✓ 85張、僅TS對 17張、僅v4對 9張。v4 差距最大（-6%）。 |
 
 ---
 
