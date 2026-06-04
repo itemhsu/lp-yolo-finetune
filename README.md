@@ -6,6 +6,25 @@
 
 ---
 
+## 快速下載
+
+### Merged 模型（YOLOv26n-pose）
+
+| 版本 | mAP50(B) | mAP50(P) | PyTorch (.pt) | ONNX (.onnx) |
+|---|---|---|---|---|
+| **v4 ep292 ★ 最終推薦** | 0.9267 | 0.8332 | [best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.pt) | [best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v4-20260604/best.onnx) |
+| v3 ep59 | 0.8528 | 0.6845 | [best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.pt) | [best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v3-20260602/best.onnx) |
+| v2 ep30 | 0.8089 | 0.6434 | [best.pt](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v2-20260530-143438/best.pt) | [best.onnx](https://github.com/itemhsu/lp-yolo-finetune/raw/master/artifacts/yolo26n-merged-v2-20260530-143438/best.onnx) |
+
+### Two-step 基準管線模型（Git LFS）
+
+| 模型 | 說明 | 下載 |
+|---|---|---|
+| PlateDet.onnx | YOLOv4 車牌 bbox 偵測（244MB，Step 1） | [下載](https://github.com/itemhsu/lp-yolo-finetune/raw/master/two_step_models/0x1PlateDet/PlateDet.onnx) |
+| PlateRectifier.onnx | 4 角點 regressor（7.4MB，Step 2） | [下載](https://github.com/itemhsu/lp-yolo-finetune/raw/master/two_step_models/PlateRectifier.onnx) |
+
+---
+
 ## 目錄
 
 1. [背景與動機](#1-背景與動機)
