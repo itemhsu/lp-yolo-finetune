@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Merged-v3 訓練計劃 — Cell AB</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:"Noto Sans TC",Arial,sans-serif;margin:0;padding:28px 32px;background:#0f172a;color:#e2e8f0;line-height:1.65}
+    h1{font-size:24px;margin:0 0 4px}
+    .sub{color:#94a3b8;font-size:13px;margin:0 0 26px}
+    h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin:0 0 12px}
+    h3{font-size:15px;margin:0 0 8px}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;margin-bottom:16px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+    .stat{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px 16px}
+    .stat-label{font-size:11px;color:#94a3b8;text-transform:uppercase}
+    .stat-value{font-size:20px;font-weight:700;margin-top:3px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:7px 10px;text-align:left;border-bottom:1px solid #334155}
+    th{color:#94a3b8;font-weight:500;background:#0f172a}
+    code{background:#0f172a;padding:1px 6px;border-radius:3px;font-size:11px;color:#fbbf24}
+    .pos{color:#86efac;font-weight:600}
+    .neg{color:#fca5a5;font-weight:600}
+    .warn{color:#fcd34d}
+    .tag{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700}
+    .tag-r{background:#7f1d1d;color:#fca5a5}
+    .tag-g{background:#14532d;color:#86efac}
+    .tag-b{background:#1e3a8a;color:#93c5fd}
+    .tag-y{background:#78350f;color:#fcd34d}
+    .step{display:flex;gap:14px;margin-bottom:18px;align-items:flex-start}
+    .snum{background:#4c1d95;color:#c4b5fd;border-radius:50%;width:28px;height:28px;
+          display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;margin-top:2px}
+    .sbody h4{margin:0 0 5px;font-size:14px}
+    .sbody p{margin:4px 0;font-size:13px;color:#cbd5e1}
+    ul{margin:5px 0;padding-left:20px;font-size:13px;color:#cbd5e1}
+    li{margin:3px 0}
+    .verify{font-size:12px;color:#fcd34d;margin-top:7px;padding:6px 10px;background:#1c1a06;border-radius:4px;border-left:3px solid #fcd34d}
+    .insight{background:#0f1729;border:1px solid #1e3a8a;border-radius:6px;padding:12px 16px;margin-bottom:10px;font-size:13px}
+    .warn-box{background:#1c1206;border:1px solid #78350f;border-radius:6px;padding:12px 16px;margin-bottom:10px;font-size:13px;color:#fcd34d}
+    .flow{display:flex;gap:0;align-items:center;flex-wrap:wrap;margin:14px 0}
+    .fbox{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px 14px;font-size:13px;text-align:center}
+    .farr{font-size:20px;color:#475569;padding:0 8px}
+    .highlight{border-color:#7c3aed;color:#c4b5fd}
+    .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+    .rcell{padding:12px;border-radius:6px;border:2px solid #334155;background:#0f172a}
+    .rcell.before{border-color:#b45309}
+    .rcell.after{border-color:#15803d}
+    .rcell-label{font-size:10px;text-transform:uppercase;color:#94a3b8;margin-bottom:4px}
+    .rcell-val{font-size:18px;font-weight:700}
+  </style>
+</head>
+<body>
+
+<h1>Merged-v3 訓練計劃 — Cell AB 驅動</h1>
+<div class="sub">基於 Cell D 2×2 分析 · 2026-05-30</div>
+
+<!-- 為什麼選 AB -->
+<div class="card">
+  <h2>為什麼 Cell AB 是最有訓練價值的</h2>
+
+  <div class="insight">
+    <strong>AA（62.1%）</strong>：兩系統讀出相同字串 → 模型已收斂在同一答案，再訓練無法改變行為
+  </div>
+  <div class="insight">
+    <strong>AB（21.6%，3,872 張）</strong>：Two-step 有穩定的像車牌輸出，Merged 讀出不同 →
+    Merged <em>還沒學會</em>這類板牌的正確框選方式。Two-step corners 可作為監督信號
+  </div>
+  <div class="insight">
+    <strong>BA / BB</strong>：兩者讀出不像車牌 → 偵測區域可能根本不是車牌，GT 不可信，訓練易引入噪音
+  </div>
+
+  <h3 style="margin-top:16px">Cell AB 內部結構</h3>
+  <div class="grid3" style="margin-top:10px">
+    <div class="stat"><div class="stat-label">AB 總數</div><div class="stat-value">3,872</div></div>
+    <div class="stat">
+      <div class="stat-label">Merged 有框但 warp 偏移</div>
+      <div class="stat-value">3,210 <span style="font-size:14px;color:#94a3b8">(82.9%)</span></div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Merged 完全未偵測</div>
+      <div class="stat-value">662 <span style="font-size:14px;color:#94a3b8">(17.1%)</span></div>
+    </div>
+  </div>
+
+  <h3 style="margin-top:16px">AB 典型樣本（說明問題性質）</h3>
+  <table>
+    <thead><tr><th>Two-step OCR</th><th>Merged OCR</th><th>問題類型</th></tr></thead>
+    <tbody>
+      <tr><td><code>BNH9881</code></td><td><code>NH9881</code></td><td>Merged 少讀前綴字 → warp 左側切到</td></tr>
+      <tr><td><code>EAG6668</code></td><td><code>EAG66668</code></td><td>Merged 多讀一個字 → warp 邊界偏移</td></tr>
+      <tr><td><code>EAE7567</code></td><td><code>EAE7367</code></td><td>數字誤讀 → warp 角度略偏</td></tr>
+      <tr><td><code>EBB2377</code></td><td><code>E882377</code></td><td>B→8 混淆 → warp 精度不足</td></tr>
+      <tr><td><code>2C4209</code></td><td><code>（空）</code></td><td>Merged 完全未偵測</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:12px;color:#94a3b8;margin-top:8px">
+    核心原因：Merged 的 keypoint warp 精度比 Two-step 差 → 字符邊界切錯 → OCR 差 1~2 個字
+  </p>
+</div>
+
+<!-- 訓練目標 -->
+<div class="card">
+  <h2>訓練目標</h2>
+  <div class="flow">
+    <div class="fbox">Cell AB<br><small>3,872 張</small></div>
+    <div class="farr">→</div>
+    <div class="fbox highlight">以 Two-step corners<br>為 YOLO Pose GT</div>
+    <div class="farr">→</div>
+    <div class="fbox">Fine-tune<br>Merged-v2</div>
+    <div class="farr">→</div>
+    <div class="fbox">Merged warp<br>更準確</div>
+    <div class="farr">→</div>
+    <div class="fbox pos">AB → AA<br>（或直接 match）</div>
+  </div>
+
+  <div class="warn-box">
+    <strong>重要前提</strong>：Two-step corners 是否可信？<br>
+    Two-step 使用 PlateDet.onnx（YOLOv4）+ PlateRectifier.onnx 專門做板牌角點，
+    且 Two-step 讀出像車牌的字串（AB 定義）→ 偵測到的是真實車牌的機率高，corners 可當 pseudo-GT
+  </div>
+</div>
+
+<!-- 實作步驟 -->
+<div class="card">
+  <h2>實作步驟（逐步驗證）</h2>
+
+  <div class="step">
+    <div class="snum">1</div>
+    <div class="sbody">
+      <h4>萃取 Cell AB，轉換為 YOLO Pose 標注格式</h4>
+      <p>從 <code>lpd_twostep_vs_merged.csv</code> 取出 AB 的 3,872 張</p>
+      <ul>
+        <li>讀取 <code>twostep_corners</code>（JSON 格式：[[x,y],[x,y],[x,y],[x,y]]）</li>
+        <li>轉換為 YOLO pose 格式：<code>class cx cy w h kp1x kp1y 2 kp2x kp2y 2 ...</code>（歸一化至 0~1）</li>
+        <li>角點順序：TL / TR / BR / BL（與 merged_dataset 訓練格式一致）</li>
+        <li>bounding box = corners 的外接矩形</li>
+        <li>Split：train 80% / val 10% / holdout 10%</li>
+      </ul>
+      <div class="verify">驗證：隨機抽 10 張，用 cv2 疊圖確認 corners 在正確位置</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="snum">2</div>
+    <div class="sbody">
+      <h4>建立 Merged-v3 訓練集</h4>
+      <ul>
+        <li>Base：現有 <code>merged_dataset/</code>（7,205 張）→ 保留原樣</li>
+        <li>新增：Cell AB（3,872 張）→ 以 image_path 去重（不重複加入）</li>
+        <li>合計：約 <strong>10,500 張</strong>（train ~8,400 / val ~1,050 / holdout ~1,050）</li>
+        <li>更新 <code>data.yaml</code>（multi-path list）</li>
+      </ul>
+      <div class="verify">驗證：<code>data.yaml</code> 中 train/val 路徑存在，<code>nc=1 kpt_shape=[4,3]</code></div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="snum">3</div>
+    <div class="sbody">
+      <h4>SageMaker Fine-tune（從 merged-v2 checkpoint 繼續）</h4>
+      <ul>
+        <li>Base model：<code>yolo26-merged-v1/best.pt</code>（merged-v2 的輸出）</li>
+        <li>Epochs：<strong>20</strong>（已收斂，只需吸收新數據）</li>
+        <li>LR：<code>0.001</code>（比原始 0.01 小，避免遺忘已學知識）</li>
+        <li>Instance：<code>ml.g4dn.xlarge</code>，預估 30~40 分鐘，~$0.5</li>
+        <li>訓練指令同 merged-v2 流程（sm_work/ 架構）</li>
+      </ul>
+      <div class="verify">
+        訓練結束後確認：<br>
+        • <code>results.csv</code> 中 mAP50 ≥ merged-v2（0.764）<br>
+        • val loss 有下降趨勢（未過擬合）
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="snum">4</div>
+    <div class="sbody">
+      <h4>下載並轉換 ONNX</h4>
+      <ul>
+        <li>從 S3 下載 <code>model.tar.gz</code> → 解壓取 <code>best.pt</code></li>
+        <li>匯出：<code>yolo export model=best.pt format=onnx imgsz=640</code></li>
+        <li>存放：<code>yolo26-merged-v3/best.onnx</code></li>
+      </ul>
+      <div class="verify">用單張 AB 樣本測試推論，確認輸出 shape 正確</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="snum">5</div>
+    <div class="sbody">
+      <h4>重跑 Cell AB 子集 Benchmark</h4>
+      <p>只跑 3,872 張 AB 樣本，比較 merged-v2 vs merged-v3</p>
+      <ul>
+        <li>指標：Merged 讀出字串與 Two-step 字串的吻合率（AB 變 AA 的比例）</li>
+        <li>指標：merged_detected 在 AB 中的比例（應 ≥ 原本 82.9%）</li>
+        <li>保護：全集 23k detection rate 不應退步</li>
+      </ul>
+      <div class="verify">AB 中 merged 與 two-step 讀出相同的比例應從 0% → 目標 30%+</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="snum">6</div>
+    <div class="sbody">
+      <h4>全集 23k 完整 Benchmark</h4>
+      <p>確認整體效益，更新 2×2 矩陣</p>
+      <div class="verify">
+        Cell AB 數量應減少；Cell AA 或 match=1 應增加；Cell B regression &lt; 500
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 預期結果 -->
+<div class="card">
+  <h2>預期結果</h2>
+  <div class="result-grid">
+    <div class="rcell before">
+      <div class="rcell-label">Merged-v2（現況）</div>
+      <div class="rcell-val neg">Cell AB：3,872 張</div>
+      <p style="font-size:12px;color:#94a3b8;margin:4px 0">Merged warp 偏移，讀出與 Two-step 不同</p>
+    </div>
+    <div class="rcell after">
+      <div class="rcell-label">Merged-v3（目標）</div>
+      <div class="rcell-val pos">Cell AB 縮減 30%+</div>
+      <p style="font-size:12px;color:#94a3b8;margin:4px 0">Merged corners 更精準，OCR 與 Two-step 趨於一致</p>
+    </div>
+  </div>
+
+  <h3 style="margin-top:16px">風險與緩解</h3>
+  <table>
+    <thead><tr><th>風險</th><th>緩解方式</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Two-step corners 指向錯誤車牌（非 filename 對應的那輛）</td>
+        <td>EP 的 GT 不可信，但 BOF/1224/0721TW 的 filename 含車牌號可交叉驗證</td>
+      </tr>
+      <tr>
+        <td>舊數據遺忘（catastrophic forgetting）</td>
+        <td>新舊數據混合訓練，LR 降低，不從頭訓練</td>
+      </tr>
+      <tr>
+        <td>EP 佔 AB 26%（1,019 張）且 GT 不可信</td>
+        <td>Two-step 在 EP 仍有穩定偵測（corners 是真實車牌），可用；或先排除 EP 測試效果</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 時程 -->
+<div class="card">
+  <h2>時程與成本</h2>
+  <div class="grid3">
+    <div class="stat"><div class="stat-label">Step 1-2 資料準備</div><div class="stat-value">~1 小時</div></div>
+    <div class="stat"><div class="stat-label">Step 3 SageMaker</div><div class="stat-value">~40 分鐘 / $0.5</div></div>
+    <div class="stat"><div class="stat-label">Step 4-6 評估</div><div class="stat-value">~1 小時</div></div>
+  </div>
+</div>
+
+</body>
+</html>

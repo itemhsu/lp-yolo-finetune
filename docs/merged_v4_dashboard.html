@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Merged-v4 訓練監控（300 ep）</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <style>
+    body{font-family:"Noto Sans TC",Arial,sans-serif;margin:0;padding:20px 24px;background:#0f172a;color:#e2e8f0}
+    h1{font-size:21px;margin:0 0 3px}
+    .sub{color:#94a3b8;font-size:12px;margin:0 0 18px}
+    .pill{display:inline-block;padding:4px 14px;border-radius:16px;font-weight:800;font-size:13px;margin-left:8px}
+    .pill-run{background:#14532d;color:#86efac;animation:pulse 2s infinite}
+    .pill-done{background:#1e3a8a;color:#93c5fd}
+    .pill-err{background:#7f1d1d;color:#fca5a5}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:9px;padding:14px 18px}
+    h2{font-size:11px;text-transform:uppercase;color:#94a3b8;margin:0 0 10px}
+    canvas{max-height:220px}
+    .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+    .stat{background:#1e293b;border:1px solid #334155;border-radius:7px;padding:10px 14px}
+    .sl{font-size:10px;color:#94a3b8;text-transform:uppercase}
+    .sv{font-size:18px;font-weight:700;margin-top:2px}
+    .prog{width:100%;height:28px;background:#334155;border-radius:14px;overflow:hidden;position:relative;margin:10px 0 4px}
+    .progf{height:100%;background:linear-gradient(90deg,#7c3aed,#06b6d4);transition:width .6s ease}
+    .progt{position:absolute;left:0;right:0;top:0;line-height:28px;text-align:center;font-weight:700;font-size:13px;color:#fff}
+    .latest{font-size:12px;color:#94a3b8;margin:6px 0 0;font-family:monospace}
+    .err{background:#7f1d1d;color:#fecaca;padding:8px 12px;border-radius:4px;font-size:12px;font-family:monospace;margin-bottom:12px;display:none}
+    .ref-tag{font-size:10px;color:#fcd34d;margin-left:6px}
+  </style>
+</head>
+<body>
+<h1>Merged-v4 訓練（300 epochs）<span id="pill" class="pill pill-run">RUNNING</span></h1>
+<div class="sub">更新：<span id="ts">—</span> · 輪詢 10s · 起點：v3 best.pt (ep59) · lr0=0.0001
+  <span class="ref-tag">— 虛線 = v3 參考值</span></div>
+
+<div id="errBox" class="err"></div>
+
+<div class="stats">
+  <div class="stat"><div class="sl">已完成 epoch</div><div class="sv" id="s-ep">—</div></div>
+  <div class="stat"><div class="sl">進度</div><div class="sv" id="s-prog">—</div></div>
+  <div class="stat"><div class="sl">GPU Mem</div><div class="sv" id="s-gpu">—</div></div>
+  <div class="stat"><div class="sl">val/box best</div><div class="sv" id="s-vbest">—</div></div>
+  <div class="stat"><div class="sl">mAP50(B) best</div><div class="sv" id="s-mbest">—</div></div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+  <h2>進度</h2>
+  <div class="prog"><div class="progf" id="progf" style="width:0%"></div>
+    <div class="progt" id="progt">0/300 (0.0%)</div></div>
+  <div class="latest" id="latest">等待第一個 epoch...</div>
+</div>
+
+<div class="grid">
+  <div class="card"><h2>Box Loss</h2><canvas id="cBoxLoss"></canvas></div>
+  <div class="card"><h2>Pose Loss</h2><canvas id="cPoseLoss"></canvas></div>
+  <div class="card"><h2>mAP50 — Box &amp; Pose</h2><canvas id="cMap"></canvas></div>
+  <div class="card"><h2>Val Loss</h2><canvas id="cValLoss"></canvas></div>
+</div>
+
+<script>
+// ── v2+v3 歷史資料（ep 1-60）嵌入 ──
+const P_EP  = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60];
+const P_TB  = [1.20549, 1.20392, 1.19917, 1.21173, 1.19451, 1.18585, 1.20011, 1.18831, 1.16704, 1.16244, 1.13764, 1.13985, 1.13557, 1.12443, 1.11954, 1.12004, 1.09653, 1.10245, 1.1015, 1.10367, 0.97442, 0.94886, 0.94316, 0.9502, 0.92731, 0.92563, 0.92459, 0.92216, 0.90952, 0.91255, 1.08997, 1.12026, 1.16869, 1.21652, 1.21305, 1.19819, 1.20272, 1.19341, 1.17505, 1.17241, 1.15382, 1.14736, 1.13075, 1.11702, 1.10411, 1.09765, 1.08193, 1.07213, 1.07693, 1.07074, 0.96015, 0.93545, 0.93246, 0.93454, 0.9053, 0.90156, 0.89482, 0.89761, 0.87629, 0.87964];  const P_TP = [2.16301, 2.13708, 2.05771, 1.96651, 1.93946, 1.89263, 2.06124, 1.94633, 1.83528, 1.86311, 1.93336, 1.78577, 1.8317, 1.80165, 1.81412, 1.74894, 1.73948, 1.71598, 1.74041, 1.73478, 2.39781, 2.37425, 2.24588, 2.22186, 2.19554, 2.23807, 2.18829, 2.11757, 2.07903, 2.09801, 1.72835, 1.99152, 2.08567, 2.26679, 2.04452, 2.13585, 1.95013, 2.09428, 1.84548, 1.79533, 1.79955, 1.76336, 1.57424, 1.54831, 1.48164, 1.46469, 1.40094, 1.35568, 1.34076, 1.29953, 1.88401, 1.79547, 1.63885, 1.67137, 1.65253, 1.59527, 1.47153, 1.4218, 1.41677, 1.43138];
+const P_VB  = [1.31312, 1.27389, 1.29715, 1.28676, 1.21786, 1.20055, 1.2221, 1.20282, 1.20851, 1.18859, 1.16686, 1.15835, 1.15826, 1.1758, 1.15414, 1.17188, 1.13777, 1.12919, 1.14119, 1.14134, 1.12623, 1.12435, 1.12114, 1.1335, 1.10783, 1.10703, 1.12122, 1.11051, 1.11519, 1.11226, 1.13041, 1.21382, 1.23986, 1.37243, 1.19529, 1.18666, 1.20574, 1.19744, 1.19054, 1.17902, 1.18334, 1.17972, 1.16312, 1.12343, 1.13207, 1.11399, 1.13094, 1.08248, 1.13518, 1.0778, 1.09167, 1.09993, 1.08304, 1.09277, 1.07564, 1.0687, 1.0644, 1.05469, 1.04974, 1.04709];  const P_VP = [6.28752, 5.03184, 2.91528, 4.88709, 3.66716, 5.51365, 4.14871, 4.41495, 3.35562, 2.48621, 4.03867, 2.57359, 2.87807, 5.86784, 2.75413, 4.30374, 3.94388, 2.80902, 5.62773, 3.38193, 3.07442, 3.11375, 3.50517, 3.30639, 1.91609, 2.59575, 1.86223, 2.46029, 2.3613, 2.51118, 3.29341, 2.12965, 4.7564, 2.47633, 2.60097, 1.33131, 2.58952, 4.73228, 1.02498, 1.83571, 2.37576, 0.82357, 1.43577, 1.64087, 2.72102, 3.90812, 1.41151, 3.57265, 1.69803, 1.7962, 1.26614, 3.13576, 1.8369, 1.97246, 1.14819, 1.47097, 1.70439, 1.8057, 1.85837, 1.77971];
+const P_MB  = [0.6989, 0.74037, 0.7323, 0.75213, 0.75733, 0.76542, 0.7793, 0.78172, 0.78086, 0.78617, 0.79746, 0.78278, 0.78694, 0.79447, 0.79797, 0.80325, 0.80766, 0.8115, 0.81224, 0.80919, 0.81169, 0.81021, 0.81765, 0.82204, 0.8226, 0.82374, 0.82367, 0.82514, 0.82475, 0.82661, 0.80952, 0.78626, 0.78786, 0.76327, 0.77805, 0.77164, 0.78496, 0.76313, 0.79002, 0.79568, 0.7839, 0.80543, 0.80417, 0.80985, 0.80386, 0.81374, 0.82948, 0.82706, 0.82979, 0.83281, 0.8387, 0.83507, 0.83667, 0.83845, 0.83528, 0.84354, 0.84236, 0.84494, 0.85283, 0.84716];  const P_MP = [0.34524, 0.41114, 0.53084, 0.41143, 0.51659, 0.37078, 0.46523, 0.45847, 0.53441, 0.59406, 0.47369, 0.58504, 0.56385, 0.38036, 0.57898, 0.467, 0.49284, 0.58163, 0.3933, 0.53843, 0.55351, 0.53777, 0.52414, 0.53609, 0.64918, 0.5953, 0.65909, 0.60512, 0.61679, 0.60512, 0.54404, 0.59941, 0.45717, 0.59363, 0.58175, 0.67318, 0.53863, 0.40229, 0.71437, 0.63782, 0.59621, 0.75926, 0.69629, 0.65116, 0.57924, 0.5051, 0.71304, 0.54006, 0.6942, 0.66827, 0.73376, 0.57699, 0.68664, 0.66467, 0.73711, 0.71652, 0.69526, 0.67823, 0.68447, 0.68088];
+
+const V3_BEST_VB = 1.04709;
+const V3_BEST_MB = 0.85283;
+const V3_BEST_MP = 0.75926;
+
+const GRID = '#334155';
+const EP60_ANN = {
+  type:'line', xMin:60, xMax:60,
+  borderColor:'rgba(99,102,241,0.7)', borderWidth:1.5, borderDash:[4,3],
+  label:{content:'ep60 v3→v4', display:true, position:'start',
+          color:'#a5b4fc', font:{size:9}, backgroundColor:'rgba(0,0,0,0.5)'}
+};
+
+function refLineY(val, label) {
+  return {
+    type:'line', yMin:val, yMax:val,
+    borderColor:'rgba(252,211,77,0.55)', borderWidth:1.2, borderDash:[5,3],
+    label:{content:label+' '+val, display:true, position:'end',
+            color:'#fcd34d', font:{size:9}, backgroundColor:'rgba(0,0,0,0.45)'}
+  };
+}
+
+const BASE = (anns) => ({
+  responsive:true, animation:false,
+  plugins:{
+    legend:{labels:{color:'#94a3b8',font:{size:10}}},
+    annotation:{annotations:anns}
+  },
+  scales:{
+    x:{ticks:{color:'#64748b',font:{size:9},maxTicksLimit:20},grid:{color:GRID},
+       title:{display:true,text:'Epoch (累計)',color:'#64748b',font:{size:10}}},
+    y:{ticks:{color:'#64748b',font:{size:9}},grid:{color:GRID}}
+  }
+});
+
+const charts = {};
+
+function mkDS(label, data, color, radius) {
+  return {label, data, borderColor:color, tension:0.3, pointRadius:radius||1.5,
+           backgroundColor:color.replace('rgb(','rgba(').replace(')',',0.06)')};
+}
+
+function buildCharts(ep, tb, tp, vb, vp, mb, mp) {
+  function mk(id, dsets, anns) {
+    charts[id] = new Chart(document.getElementById(id), {
+      type:'line', data:{labels:ep, datasets:dsets}, options:BASE(anns)
+    });
+  }
+  mk('cBoxLoss',
+    [mkDS('train/box',tb,'rgb(59,130,246)'), mkDS('val/box',vb,'rgb(245,158,11)')],
+    {ep60:EP60_ANN, refVB:refLineY(V3_BEST_VB,'v3 best val/box')});
+  mk('cPoseLoss',
+    [mkDS('train/pose',tp,'rgb(139,92,246)'), mkDS('val/pose',vp,'rgb(239,68,68)')],
+    {ep60:EP60_ANN});
+  mk('cMap',
+    [mkDS('mAP50(B)',mb,'rgb(34,197,94)'), mkDS('mAP50(P)',mp,'rgb(6,182,212)')],
+    {ep60:EP60_ANN, refMB:refLineY(V3_BEST_MB,'v3 best mAP(B)'), refMP:refLineY(V3_BEST_MP,'v3 best mAP(P)')});
+  mk('cValLoss',
+    [mkDS('val/box',vb,'rgb(245,158,11)'), mkDS('val/pose',vp,'rgb(239,68,68)')],
+    {ep60:EP60_ANN, refVB:refLineY(V3_BEST_VB,'v3 best val/box')});
+}
+
+function updCharts(ep, tb, tp, vb, vp, mb, mp) {
+  const u = (id, arrs) => { const c=charts[id]; c.data.labels=ep; arrs.forEach((d,i)=>c.data.datasets[i].data=d); c.update('none'); };
+  u('cBoxLoss',[tb,vb]); u('cPoseLoss',[tp,vp]); u('cMap',[mb,mp]); u('cValLoss',[vb,vp]);
+}
+
+// 初始化：只用歷史資料先畫出 ep1-60
+buildCharts([...P_EP],[...P_TB],[...P_TP],[...P_VB],[...P_VP],[...P_MB],[...P_MP]);
+
+let lastRows = -1;
+
+function applyData(d) {
+  document.getElementById('ts').textContent = d.updated;
+  const pill=document.getElementById('pill');
+  if(d.done)       {pill.className='pill pill-done';pill.textContent='DONE';}
+  else if(d.error) {pill.className='pill pill-err'; pill.textContent='ERROR';}
+  else             {pill.className='pill pill-run'; pill.textContent='RUNNING';}
+  const eb=document.getElementById('errBox');
+  if(d.error){eb.style.display='block';eb.textContent=d.error;}else{eb.style.display='none';}
+
+  const pct=d.total?(d.cur/d.total*100).toFixed(1):0;
+  document.getElementById('s-ep').textContent   = d.cur;
+  document.getElementById('s-prog').textContent = d.cur+'/'+d.total;
+  document.getElementById('s-gpu').textContent  = d.gpu_mem;
+  document.getElementById('progf').style.width  = pct+'%';
+  document.getElementById('progt').textContent  = d.cur+'/'+d.total+' ('+pct+'%)';
+  if(d.latest) document.getElementById('latest').textContent=d.latest;
+
+  if(d.newValBox && d.newValBox.length) {
+    const allVb = P_VB.concat(d.newValBox);
+    const allMb = P_MB.concat(d.newMapB);
+    document.getElementById('s-vbest').textContent=Math.min(...allVb).toFixed(4);
+    document.getElementById('s-mbest').textContent=Math.max(...allMb).toFixed(4);
+  }
+
+  if(d.n_rows === lastRows) return;
+  lastRows = d.n_rows;
+
+  // concat 歷史 + v4 新資料
+  const ep = P_EP.concat(d.newEpochs);
+  updCharts(ep,
+    P_TB.concat(d.newTrainBox), P_TP.concat(d.newTrainPose),
+    P_VB.concat(d.newValBox),   P_VP.concat(d.newValPose),
+    P_MB.concat(d.newMapB),     P_MP.concat(d.newMapP));
+}
+
+function poll() {
+  const s=document.createElement('script');
+  s.src='merged_v4_data.js?t='+Date.now();
+  s.onload=()=>{if(window.__v4data)applyData(window.__v4data);s.remove();};
+  s.onerror=()=>{document.getElementById('ts').textContent+=' ?';s.remove();};
+  document.head.appendChild(s);
+}
+poll();
+setInterval(poll,10000);
+</script>
+</body>
+</html>

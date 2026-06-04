@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YOLOv26-pose-n Fine-tune 規劃（用 2×2 結果）</title>
+  <style>
+    body {
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", Arial, sans-serif;
+      max-width: 1080px;
+      margin: 32px auto;
+      padding: 0 24px 64px;
+      color: #1f2933;
+      line-height: 1.65;
+      background: #fafbfc;
+    }
+    h1 { font-size: 28px; border-bottom: 3px solid #2563eb; padding-bottom: 10px; margin-bottom: 18px; }
+    h2 { font-size: 20px; margin-top: 32px; color: #1e40af; border-left: 4px solid #2563eb; padding-left: 10px; }
+    h3 { font-size: 16px; margin-top: 22px; color: #334155; }
+    p, li { font-size: 14.5px; }
+    code, pre {
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      background: #eef2f6;
+      border-radius: 4px;
+    }
+    code { padding: 1px 6px; font-size: 13px; }
+    pre {
+      padding: 12px 14px; overflow-x: auto;
+      font-size: 13px; line-height: 1.55;
+      border: 1px solid #d1d9e0;
+      background: #1f2933; color: #e4e7eb;
+    }
+    pre code { background: transparent; color: inherit; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13.5px; }
+    th, td { border: 1px solid #cfd7df; padding: 6px 10px; text-align: left; vertical-align: top; }
+    th { background: #e0e7ff; }
+    tr:nth-child(even) td { background: #f5f7fa; }
+    .meta { background: #eff6ff; border: 1px solid #93c5fd; padding: 12px 16px; border-radius: 6px; }
+    .note { background: #f0fdf4; border-left: 4px solid #15803d; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .warn { background: #fef2f2; border-left: 4px solid #dc2626; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .star  { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    ol, ul { padding-left: 22px; }
+    hr { border: none; border-top: 1px solid #d1d9e0; margin: 32px 0; }
+
+    .cross-tab th, .cross-tab td {
+      text-align: center; padding: 14px;
+    }
+    .cross-tab .tf { background: #fffbeb; font-weight: 700; }
+    .cross-tab .tt { background: #f0fdf4; }
+    .cross-tab .ft, .cross-tab .ff { background: #f5f5f5; color: #6b7280; }
+    .cross-tab .ff { background: #fef2f2; }
+
+    .keyword { color: #1d4ed8; font-weight: 600; }
+    .label { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <h1>用 2×2 結果 fine-tune YOLOv26-pose-n 規劃</h1>
+
+  <div class="meta">
+    <strong>來源資料：</strong><code>lpd_results.csv</code>（由 <code>benchmark_lpd_batch.py</code> 產出）<br>
+    <strong>目標模型：</strong><code>yolo26-train-1779339446/best.pt</code>（YOLOv26-pose-n）<br>
+    <strong>訓練框架：</strong>Ultralytics 8.4.41（已安裝）<br>
+    <strong>輸出位置：</strong><code>model/yolo26_finetune/ftn_from_2step/weights/best.pt</code>
+  </div>
+
+  <h2>1. 核心想法：2×2 的哪一格做訓練？</h2>
+
+  <table class="cross-tab">
+    <thead>
+      <tr><th></th><th>YOLOv26-n match</th><th>YOLOv26-n no-match</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th>Two-step match</th>
+        <td class="tt"><strong>TT</strong><br>兩者皆對</td>
+        <td class="tf"><strong>TF</strong> ⭐ 困難樣本<br>YOLO-n 的弱點</td>
+      </tr>
+      <tr>
+        <th>Two-step no-match</th>
+        <td class="ft"><strong>FT</strong><br>YOLO-n 對</td>
+        <td class="ff"><strong>FF</strong><br>兩者皆錯</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>各格的訓練價值</h3>
+  <ul>
+    <li><span class="label">TF 最有價值</span> — Two-step 偵測對了（OCR match 暗示 corners 正確），但 YOLOv26-n 偵測失敗。<strong>用 Two-step 的 corners 當偽標籤</strong>，直接針對性訓練 YOLO-n 的弱點。</li>
+    <li><span class="label">TT 補強</span> — 兩者皆對，可補充資料多樣性。但 YOLO-n 已能搞定，邊際效益小。</li>
+    <li><span class="label">FT / FF 不用</span> — FT 的 Two-step 結果不可靠（match=0）；FF 兩個都錯，標籤可信度低。要用必須<strong>人工校正</strong>。</li>
+  </ul>
+
+  <div class="note">
+    <strong>底層邏輯：</strong>當清洗後 OCR 是檔名子字串 → 幾乎必然 corners 正確 → corners 可當 pseudo ground-truth。
+    <strong>OCR match 是 corner correctness 的代理指標</strong>。
+  </div>
+
+  <h2>2. 資料準備：CSV → YOLO-pose 標籤</h2>
+
+  <h3>2.1 YOLO-pose 標籤格式</h3>
+  <p>每張圖一個 <code>.txt</code>，所有座標<strong>正規化到 0~1</strong>（除以影像寬高）：</p>
+  <pre><code>&lt;class&gt; &lt;cx&gt; &lt;cy&gt; &lt;w&gt; &lt;h&gt; &lt;kpt0_x&gt; &lt;kpt0_y&gt; &lt;vis&gt; &lt;kpt1_x&gt; &lt;kpt1_y&gt; &lt;vis&gt; &lt;kpt2_x&gt; &lt;kpt2_y&gt; &lt;vis&gt; &lt;kpt3_x&gt; &lt;kpt3_y&gt; &lt;vis&gt;</code></pre>
+  <ul>
+    <li><code>class=0</code>（license_plate）</li>
+    <li><code>vis=2</code>（可見）</li>
+    <li>Keypoint 順序：TL → TR → BR → BL（與現有 <code>yolo_lp/dataset.yaml</code> 一致；<code>sort_corners()</code> 已是這個順序）</li>
+  </ul>
+
+  <h3>2.2 偽標籤生成腳本（建議檔名 <code>make_pseudo_labels.py</code>）</h3>
+  <pre><code>import csv, json
+from pathlib import Path
+import cv2
+
+OUT_IMAGES = Path("yolo_lp_finetune/images")
+OUT_LABELS = Path("yolo_lp_finetune/labels")
+OUT_IMAGES.mkdir(parents=True, exist_ok=True)
+OUT_LABELS.mkdir(parents=True, exist_ok=True)
+
+with open("lpd_results.csv") as f:
+    for row in csv.DictReader(f):
+        # 只取 TF: Two-step match=1 且 YOLOv26-n match=0
+        if not (row["twostep_match"] == "1" and row["yolo26n_match"] == "0"):
+            continue
+
+        img_path = row["image_path"]
+        corners = json.loads(row["twostep_corners"])     # [[x,y]*4] 影像座標
+        img = cv2.imread(img_path)
+        h, w = img.shape[:2]
+
+        # bbox = 4 角點外接矩形
+        xs, ys = [p[0] for p in corners], [p[1] for p in corners]
+        x1, y1, x2, y2 = min(xs), min(ys), max(xs), max(ys)
+        cx, cy = (x1 + x2) / 2 / w, (y1 + y2) / 2 / h
+        bw, bh = (x2 - x1) / w, (y2 - y1) / h
+
+        # 4 keypoints 正規化
+        kpts = []
+        for kx, ky in corners:
+            kpts += [kx / w, ky / h, 2]                   # vis=2
+
+        stem = Path(img_path).stem
+        label_str = f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f} " + \
+                    " ".join(f"{v:.6f}" for v in kpts)
+        (OUT_LABELS / f"{stem}.txt").write_text(label_str)
+        (OUT_IMAGES / Path(img_path).name).symlink_to(img_path)</code></pre>
+
+  <h2>3. 建立訓練設定 <code>dataset.yaml</code></h2>
+  <pre><code>path: /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/yolo_lp_finetune
+train: images
+val: images           # 或另切 20% 出來
+
+kpt_shape: [4, 3]
+names:
+  0: license_plate</code></pre>
+  <div class="note">建議將 TF 樣本拆 train/val（例如 380/64），保留驗證集才能判斷是否過擬合。</div>
+
+  <h2>4. Fine-tune 指令（Ultralytics 8.4.41）</h2>
+  <pre><code>cd /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/model
+
+yolo pose train \
+  model=yolo26-train-1779339446/best.pt \
+  data=yolo_lp_finetune/dataset.yaml \
+  epochs=50 \
+  imgsz=640 \
+  batch=16 \
+  lr0=0.001 \                  # 低學習率（已預訓練）
+  lrf=0.01 \
+  freeze=10 \                  # 凍結前 10 層 backbone，只調 head
+  project=yolo26_finetune \
+  name=ftn_from_2step \
+  patience=15 \
+  device=0</code></pre>
+
+  <h3>關鍵超參數</h3>
+  <table>
+    <thead><tr><th>參數</th><th>建議值</th><th>原因</th></tr></thead>
+    <tbody>
+      <tr><td><code>lr0</code></td><td>0.001</td><td>已預訓練，學習率要低，避免破壞 backbone</td></tr>
+      <tr><td><code>freeze</code></td><td>10</td><td>444 張資料量小，凍結 backbone 防 overfit</td></tr>
+      <tr><td><code>epochs</code></td><td>50</td><td>配合 <code>patience=15</code> 早停</td></tr>
+      <tr><td><code>imgsz</code></td><td>640</td><td>與 <code>BEST_IMGSZ=640</code> 一致</td></tr>
+      <tr><td><code>mosaic</code>, <code>mixup</code></td><td>預設</td><td>YOLO 預設 augmentation 已適用</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. 驗證 fine-tune 效果</h2>
+  <p>訓練完輸出在 <code>yolo26_finetune/ftn_from_2step/weights/best.pt</code>。比較流程：</p>
+  <pre><code># 1. 把新 best.pt 轉成 onnx
+yolo export model=yolo26_finetune/ftn_from_2step/weights/best.pt format=onnx imgsz=640
+
+# 2. 替換到 benchmark
+python benchmark_lpd_batch.py \
+  --best-models yolo26_finetune/ftn_from_2step/weights/best.onnx \
+                yolo26-train-1779339446/best.onnx \
+  --csv-out lpd_results_ftn_compare.csv \
+  --limit 1000           # 先抽 1000 張看趨勢</code></pre>
+
+  <h3>比較指標</h3>
+  <ul>
+    <li><strong>TF 是否變小</strong>：fine-tune 後 YOLOv26-n 應該能搞定原本失敗的 444 張</li>
+    <li><strong>整體偵測率 / match 率</strong>應同步上升</li>
+    <li><strong>TT、FT 不可變差</strong>（不能因 fine-tune 損失泛化）</li>
+  </ul>
+
+  <h2>6. 重要陷阱 / 注意事項</h2>
+
+  <div class="star">
+    <strong>① OCR match 不等同於 corner 像素級完美。</strong><br>
+    PARSeq 容錯一些角度偏差，所以 Two-step corner 可能只是「夠好讓 OCR 對」而非完美。要更嚴的偽標籤可加篩選：corner 形狀像矩形（內角接近 90°）或長寬比合理（台牌約 3.3:1）。
+  </div>
+
+  <div class="star">
+    <strong>② 資料分布偏差。</strong><br>
+    444 張全是 Two-step 強的場景；fine-tune 可能讓 YOLOv26-n 變得「像 Two-step」。建議<strong>混入 TT 的隨機 500-1000 張</strong>保持資料多樣性。
+  </div>
+
+  <div class="star">
+    <strong>③ 檔名 → expected 規則的盲點。</strong><br>
+    <code>EP/</code> 子目錄檔名是雜湊（無車牌字串），整段會被歸進 FF，但其實兩個模型可能 corners 都對。這些不能進訓練（無法驗證）。
+  </div>
+
+  <div class="warn">
+    <strong>④ 務必留出真正的 hold-out。</strong><br>
+    別把 <code>lpd_results.csv</code> 的所有資料都拿去訓練/驗證。最好保留一個從未看過的子目錄（例如 <code>0721TW/</code>）做純測試。
+  </div>
+
+  <h2>7. 建議執行順序</h2>
+  <ol>
+    <li><strong>等主 benchmark 跑完</strong>（目前約 <code>21.5%</code>，剩 ~2h）— 取得完整 23,222 張的 CSV，TF 樣本量會更多更具代表性。</li>
+    <li><strong>小規模試訓</strong>：10 epochs、100 張 TF 樣本，驗證 pipeline 通暢、label 格式無誤。</li>
+    <li><strong>全量訓練</strong>：完整 TF + TT 混合資料、50 epochs、留 20% 驗證集。</li>
+    <li><strong>驗證</strong>：先用 <code>yolo pose val</code> 看 mAP；再用 <code>benchmark_lpd_batch.py</code> 與舊模型同場比較 TF 是否縮小。</li>
+    <li><strong>迭代</strong>：若仍有 TF，再把新模型的 TF 拿去 fine-tune 第二輪（active learning）。</li>
+  </ol>
+
+  <hr>
+  <p style="color: #6b7280; font-size: 13px;">
+    本規劃假設 <code>lpd_results.csv</code> 已產出。可隨 benchmark 進度動態更新可用 TF 樣本數。
+  </p>
+</body>
+</html>

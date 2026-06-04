@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YOLOv26-pose-n Fine-tune 訓練資料集 — 報告</title>
+  <style>
+    body {
+      font-family: "Noto Sans TC", "PingFang TC", Arial, sans-serif;
+      max-width: 1100px; margin: 32px auto; padding: 0 24px 64px;
+      color: #1f2933; line-height: 1.65; background: #fafbfc;
+    }
+    h1 { font-size: 26px; border-bottom: 3px solid #15803d; padding-bottom: 10px; margin-bottom: 18px; color: #14532d; }
+    h2 { font-size: 18px; margin-top: 26px; color: #1e40af; border-left: 4px solid #2563eb; padding-left: 10px; }
+    h3 { font-size: 15px; color: #334155; margin-top: 20px; }
+    p, li { font-size: 14.5px; }
+    code, pre { font-family: "JetBrains Mono", Consolas, monospace; }
+    code { background: #eef2f6; padding: 1px 6px; font-size: 13px; border-radius: 4px; }
+    pre { background: #1f2933; color: #e4e7eb; padding: 12px 14px; border-radius: 4px; font-size: 13px; overflow-x: auto; line-height: 1.55; }
+    pre code { background: transparent; color: inherit; padding: 0; }
+    table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13.5px; }
+    th, td { border: 1px solid #cfd7df; padding: 7px 10px; text-align: left; }
+    th { background: #e0e7ff; }
+    tr:nth-child(even) td { background: #f5f7fa; }
+    .meta { background: #eff6ff; border: 1px solid #93c5fd; padding: 12px 16px; border-radius: 6px; margin-bottom: 18px; }
+    .win  { background: #f0fdf4; border-left: 4px solid #15803d; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .star { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .alert{ background: #fef2f2; border-left: 4px solid #dc2626; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .note { background: #f3f4f6; border-left: 4px solid #6b7280; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    hr { border: none; border-top: 1px solid #d1d9e0; margin: 28px 0; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 14px 0; }
+    .stat-card { background: #fff; border: 1px solid #cbd5e1; padding: 14px 18px; border-radius: 6px; }
+    .stat-card.win { border-color: #15803d; background: #f0fdf4; }
+    .stat-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; }
+    .stat-card .value { font-size: 30px; font-weight: 800; margin-top: 2px; color: #1e293b; }
+    .stat-card .sub   { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .filetree { background: #1f2933; color: #e4e7eb; padding: 12px 16px; border-radius: 4px; font-family: monospace; font-size: 13px; line-height: 1.5; white-space: pre; }
+
+    .venn-table th { background: #fef3c7; text-align: center; }
+    .venn-table td { text-align: center; }
+    .venn-table .keep { background: #dcfce7; font-weight: 700; }
+    .venn-table .drop { background: #fee2e2; }
+  </style>
+</head>
+<body>
+  <h1>YOLOv26-pose-n Fine-tune 訓練資料集 — 報告</h1>
+
+  <div class="meta">
+    <strong>來源（取全集再去重）：</strong>
+    <ul style="margin-top:4px">
+      <li><strong>來源 A：</strong><code>yolo26n_no_detect</code> 桶（judges 一致同意 corner、YOLO-n 漏偵） — <strong>692 張</strong></li>
+      <li><strong>來源 B：</strong><code>Cell 2 (loose)</code> = 「2-step OCR 像車牌 + 兩管線 OCR 不同」（含 yolo 沒 OCR 也算「不同」） — <strong>5,906 張</strong></li>
+    </ul>
+    <strong>Ground Truth：</strong>Two-step 的 corners（依使用者指示假設其 IoU 正確性高）。<br>
+    <strong>去重策略：</strong>檔名 (<code>image_path</code>) 為 key，<u>同檔在兩源中以 <code>no_detect</code> 優先</u>（更明確的弱點）。<br>
+    <strong>Holdout：</strong>全部 <code>0721TW</code> 樣本（從 train/val 排除）。<br>
+    <strong>Train/Val 切分：</strong>80/20 隨機（seed=42）。
+  </div>
+
+  <h2>1. 取樣與去重邏輯（修正版）</h2>
+
+  <table class="venn-table">
+    <thead><tr><th>步驟</th><th>數量</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td>來源 A 候選</td><td>692</td><td>yolo26n_no_detect 桶，2-step 有 corners</td></tr>
+      <tr><td>來源 B 候選</td><td>5,906</td><td>Cell 2 loose 定義（含 yolo 無 OCR 也算 diff）</td></tr>
+      <tr><td>總池（含重疊）</td><td>6,598</td><td>A + B（同檔可同時出現）</td></tr>
+      <tr><td><strong>重疊張數</strong></td><td><strong>669</strong></td><td>yolo 沒 OCR 且 2-step plate-like → 同時符合 A 和 B；歸入 A</td></tr>
+      <tr><td>過程略過</td><td>658</td><td>5 桶中 2-step 也沒偵測（無 GT 可用）</td></tr>
+      <tr class="keep"><td><strong>最終資料量</strong></td><td><strong>5,929</strong></td><td>= 692 (no_detect) + 5,237 (cell2 去重後)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="win">
+    <strong>關鍵修正：</strong>不再預先排除「yolo 無 OCR」的 Cell 2 列。取兩源全集 → 用檔名去重 → 結果由 3,163 提升到 <strong>5,929 張</strong>。
+  </div>
+
+  <h2>2. 最終資料量</h2>
+
+  <div class="stat-grid">
+    <div class="stat-card win">
+      <div class="label">總計</div>
+      <div class="value">5,929</div>
+      <div class="sub">張獨立影像</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">no_detect</div>
+      <div class="value">692</div>
+      <div class="sub">YOLO-n 漏偵（最高訓練價值）</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">cell2 (去重後)</div>
+      <div class="value">5,237</div>
+      <div class="sub">2-step plate-like, OCR 不同</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">重疊（已歸 A）</div>
+      <div class="value" style="color:#f59e0b">669</div>
+      <div class="sub">兩源都符合的圖</div>
+    </div>
+  </div>
+
+  <h2>3. Train / Val / Holdout 分布</h2>
+
+  <table>
+    <thead><tr><th>切分</th><th>總數</th><th>no_detect</th><th>cell2</th><th>子目錄分布</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>train</strong></td><td>4,459</td><td>513</td><td>3,946</td>
+        <td>BOF: 2,824 / EP: 1,298 / 1224: 218 / 0604: 119</td>
+      </tr>
+      <tr>
+        <td><strong>val</strong></td><td>1,114</td><td>124</td><td>990</td>
+        <td>BOF: 678 / EP: 353 / 1224: 54 / 0604: 29</td>
+      </tr>
+      <tr>
+        <td><strong>holdout</strong></td><td>356</td><td>55</td><td>301</td>
+        <td>0721TW: 356</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>4. 目錄結構</h2>
+  <div class="filetree">yolo26n_ftn_dataset/
+├── dataset.yaml          # ultralytics 訓練設定
+├── manifest.csv          # 每張圖的 provenance (split/source/subdir/...)
+├── images/
+│   ├── train/   (4,459 個 symlink 到原圖)
+│   ├── val/     (1,114)
+│   └── holdout/ (356  全為 0721TW)
+└── labels/
+    ├── train/   (4,459 個 .txt YOLO-pose 標籤)
+    ├── val/     (1,114)
+    └── holdout/ (356)</div>
+
+  <p>影像以 symlink 連結到原始路徑，<strong>不複製檔案</strong>。檔名前綴子目錄避免衝突，例如：<code>BOF__20210324_161326.961_1.jpg</code>。</p>
+
+  <h2>5. 標籤格式</h2>
+  <p>每張圖一個 <code>.txt</code>，單行：</p>
+  <pre><code>&lt;class&gt; &lt;cx&gt; &lt;cy&gt; &lt;w&gt; &lt;h&gt; &lt;kpt0_x&gt; &lt;kpt0_y&gt; &lt;vis&gt; &lt;kpt1_x&gt; &lt;kpt1_y&gt; &lt;vis&gt; &lt;kpt2_x&gt; &lt;kpt2_y&gt; &lt;vis&gt; &lt;kpt3_x&gt; &lt;kpt3_y&gt; &lt;vis&gt;</code></pre>
+  <p><strong>實際範例</strong>：</p>
+  <pre><code>0 0.461779 0.550356 0.105195 0.101461 0.424625 0.534235 2 0.514377 0.499625 2 0.497680 0.571348 2 0.409182 0.601087 2</code></pre>
+  <ul>
+    <li><code>class=0</code> (license_plate)</li>
+    <li>4 keypoints 順序：TL → TR → BR → BL（由 <code>sort_corners()</code> 排序）</li>
+    <li><code>vis=2</code>（全部可見）</li>
+    <li>座標全部正規化到 [0, 1]</li>
+  </ul>
+
+  <h2>6. dataset.yaml</h2>
+  <pre><code>path: /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/yolo26n_ftn_dataset
+train: images/train
+val: images/val
+
+kpt_shape: [4, 3]
+names:
+  0: license_plate</code></pre>
+
+  <h2>7. 建議訓練指令</h2>
+  <pre><code>cd /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/model
+
+yolo pose train \
+  model=yolo26-train-1779339446/best.pt \
+  data=/home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/yolo26n_ftn_dataset/dataset.yaml \
+  epochs=50 \
+  imgsz=640 \
+  batch=16 \
+  lr0=0.001 \                # 低學習率（已預訓練）
+  lrf=0.01 \
+  freeze=10 \                # 凍結前 10 層 backbone，只調 head
+  project=yolo26_finetune \
+  name=ftn_from_consensus_v1 \
+  patience=15 \
+  device=0</code></pre>
+
+  <h2>8. 訓練後驗證流程</h2>
+  <ol>
+    <li><strong>Val mAP</strong>（自動由 ultralytics 報告）：應該看到 mAP 提升</li>
+    <li><strong>Holdout 評估</strong>：用 <code>0721TW</code> 356 張獨立資料測試泛化</li>
+    <li><strong>實戰評估</strong>：把新 <code>best.pt</code> 轉成 onnx，替換進 <code>benchmark_lpd_batch.py</code> 跑全集，看：
+      <ul>
+        <li>整體偵測率 79.3% → 期望 &gt; 90%</li>
+        <li><code>yolo26n_no_detect</code> 從 699 → 期望 &lt; 100</li>
+        <li>不能讓原本 <code>yolo26n_already_good</code> 的 11,814 張變差</li>
+      </ul>
+    </li>
+  </ol>
+
+  <h2>9. 重要警語</h2>
+
+  <div class="star">
+    <strong>① Two-step IoU 為 GT 的假設邊界。</strong><br>
+    Two-step 的 corner 在 <code>yolo26n_no_detect</code> 桶 (judges 一致) 中可靠。
+    在 Cell 2 的「weak/no judge consensus」子集中，Two-step 自己也可能歪 —
+    若 YOLO-n 抓到同影像中的另一塊真車牌，硬用 2-step 訓練會把 YOLO-n 教偏。
+    （已透過 5 桶限制，weak/no judge consensus 仍然可能進入訓練 — 是 trade-off。）
+  </div>
+
+  <div class="star">
+    <strong>② 多車牌風險未進一步過濾。</strong><br>
+    本資料集未做 <code>IoU(yolo26n, twostep) ∈ [0.3, 0.8]</code> 篩選 — 因為使用者明確指示「以 2-step 為 GT」。
+    若訓練後發現 YOLO-n 反而失去多車牌偵測能力，可重跑此腳本加入 IoU 範圍過濾。
+  </div>
+
+  <div class="alert">
+    <strong>③ Holdout 不含同 distribution。</strong><br>
+    Holdout 全為 <code>0721TW</code>（356 張），其分布可能與 train (BOF 主導 63%) 不同。
+    Val 集 (BOF 主導) 才能即時監測 overfitting；Holdout 只用於最終評估泛化能力。
+  </div>
+
+  <div class="note">
+    <strong>④ 樣本權重設定（可選）。</strong>由 manifest.csv 的 source 欄分群，建議：
+    <ul>
+      <li><code>no_detect</code> (513 train) → 權重 ×1.5（最直接的弱點）</li>
+      <li><code>cell2</code> (3,946 train) → 權重 ×1.0</li>
+    </ul>
+    若用 ultralytics 訓練，可在 dataloader 自定義 sampler 實作；初期可不設、看訓練曲線決定。
+  </div>
+
+  <hr>
+  <p style="color: #6b7280; font-size: 13px;">
+    產出腳本：<code>build_yolo_ftn_dataset.py</code>　·　測試時間：2026-05-30　·　修正：兩源取全集後檔名去重
+  </p>
+</body>
+</html>

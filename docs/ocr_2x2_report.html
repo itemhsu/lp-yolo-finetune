@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2x2 OCR 分析：Two-step vs YOLOv26-pose-n (合併 5 桶, 不分桶)</title>
+  <style>
+    body {
+      font-family: "Noto Sans TC", "PingFang TC", Arial, sans-serif;
+      max-width: 1100px; margin: 32px auto; padding: 0 24px 64px;
+      color: #1f2933; line-height: 1.65; background: #fafbfc;
+    }
+    h1 { font-size: 26px; border-bottom: 3px solid #2563eb; padding-bottom: 10px; margin-bottom: 18px; }
+    h2 { font-size: 18px; margin-top: 26px; color: #1e40af; border-left: 4px solid #2563eb; padding-left: 10px; }
+    h3 { font-size: 15px; color: #334155; margin-top: 20px; }
+    p, li { font-size: 14.5px; }
+    code { background: #eef2f6; padding: 1px 6px; font-size: 13px; border-radius: 4px; font-family: "JetBrains Mono", Consolas, monospace; }
+    .meta { background: #eff6ff; border: 1px solid #93c5fd; padding: 12px 16px; border-radius: 6px; margin-bottom: 18px; }
+    .note { background: #f3f4f6; border-left: 4px solid #6b7280; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .win  { background: #f0fdf4; border-left: 4px solid #15803d; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .star { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .alert{ background: #fef2f2; border-left: 4px solid #dc2626; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    hr { border: none; border-top: 1px solid #d1d9e0; margin: 28px 0; }
+    table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13.5px; }
+    th, td { border: 1px solid #cfd7df; padding: 7px 10px; }
+    th { background: #e0e7ff; }
+
+    .matrix { display: grid; grid-template-columns: 220px 1fr 1fr 130px; gap: 0; margin: 16px 0 24px; border: 2px solid #1e293b; border-radius: 10px; overflow: hidden; }
+    .matrix > div { padding: 16px 18px; text-align: center; }
+    .matrix .corner-header { background: #1e293b; color: #fff; font-weight: 700; text-align: center; font-size: 14px; display: flex; flex-direction: column; justify-content: center; }
+    .matrix .col-header { background: #334155; color: #fff; font-weight: 700; font-size: 14px; display: flex; flex-direction: column; justify-content: center; }
+    .matrix .row-header { background: #334155; color: #fff; font-weight: 700; font-size: 14px; display: flex; flex-direction: column; justify-content: center; }
+    .matrix .total-row { background: #1e293b; color: #fff; font-weight: 700; font-size: 14px; display: flex; flex-direction: column; justify-content: center; }
+    .matrix .total-col { background: #475569; color: #fff; font-weight: 700; font-size: 14px; display: flex; flex-direction: column; justify-content: center; }
+    .matrix .cell { background: #fff; border: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }
+    .matrix .cell .count { font-size: 30px; font-weight: 800; color: #1e293b; }
+    .matrix .cell .pct { font-size: 13px; color: #64748b; margin-top: 2px; }
+    .matrix .cell .submeta { font-size: 12px; color: #94a3b8; margin-top: 6px; line-height: 1.3; }
+    .matrix .cell.good { background: #f0fdf4; }
+    .matrix .cell.good .count { color: #15803d; }
+    .matrix .cell.bad { background: #fef2f2; }
+    .matrix .cell.bad .count { color: #b91c1c; }
+    .matrix .cell.warn { background: #fffbeb; }
+    .matrix .cell.warn .count { color: #b45309; }
+    .matrix .cell.neutral { background: #f1f5f9; }
+
+    .legend { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .pill.match-rate { background: #dcfce7; color: #14532d; }
+    .pill.win-2step  { background: #dbeafe; color: #1e40af; }
+
+    .excluded { background: #f8fafc; border: 1px dashed #cbd5e1; padding: 12px 16px; border-radius: 6px; margin: 12px 0; font-size: 13px; color: #475569; }
+  </style>
+</head>
+<body>
+  <h1>2×2 OCR 分析：Two-step vs YOLOv26-pose-n</h1>
+
+  <div class="meta">
+    <strong>輸入：</strong>合併 5 桶（<code>yolo26n_low_iou + yolo26n_wrong_location + yolo26n_no_detect + weak_judge_consensus + no_judge_consensus</code>），共 <strong>11,408 張</strong>，<u>不再分桶</u>。<br>
+    <strong>篩選：</strong>取 <strong>2-step 有 OCR 輸出</strong>的 10,674 張作為 2×2 基底。<br>
+    <strong>列：</strong>Two-step 的 OCR clean 是否符合台牌模式 <code>^[0-9A-Z]{5,7}$</code>。<br>
+    <strong>欄：</strong>Two-step OCR clean == YOLOv26-pose-n OCR clean？（其中一邊為空 → 自動算「不同」）<br>
+    <strong>「Plate-like」定義：</strong>長度 5-7、僅含 0-9 A-Z。
+  </div>
+
+  <h2>核心 2×2</h2>
+
+  <div class="matrix">
+    <div class="corner-header">基底: 10,674 張<br><span style="font-size:11px;font-weight:400;color:#94a3b8">(2step 有 OCR)</span></div>
+    <div class="col-header">OCR 相同<br><span style="font-size:12px;font-weight:400">3,453 (32.3%)</span></div>
+    <div class="col-header">OCR 不同<br><span style="font-size:12px;font-weight:400">7,221 (67.7%)</span></div>
+    <div class="total-col">列總計</div>
+
+    <div class="row-header">2-step OCR<br>像車牌</div>
+    <div class="cell good">
+      <div class="count">3,246</div>
+      <div class="pct">30.4%</div>
+      <div class="submeta">
+        <span class="pill match-rate">2step match 22.9%</span><br>
+        <span class="pill match-rate">yn match 22.9%</span><br>
+        兩者讀同字、字像車牌 → <strong>高信心同意</strong>
+      </div>
+    </div>
+    <div class="cell warn">
+      <div class="count">5,906</div>
+      <div class="pct">55.3%</div>
+      <div class="submeta">
+        <span class="pill win-2step">2step match 10.1%</span><br>
+        <span class="pill" style="background:#fef3c7;color:#78350f">yn match 4.0%</span><br>
+        都像車牌但讀不同 → <strong>2step 勝率 2.5×</strong>
+      </div>
+    </div>
+    <div class="total-col" style="font-size: 20px;">
+      <div>9,152</div>
+      <div style="font-size:12px;font-weight:400">85.7%</div>
+    </div>
+
+    <div class="row-header">2-step OCR<br>不像車牌</div>
+    <div class="cell neutral">
+      <div class="count">207</div>
+      <div class="pct">1.9%</div>
+      <div class="submeta">
+        <span class="pill match-rate">2step match 8.2%</span><br>
+        <span class="pill match-rate">yn match 8.2%</span><br>
+        兩者吐同樣的非車牌字串 → mode collapse / 同錯
+      </div>
+    </div>
+    <div class="cell bad">
+      <div class="count">1,315</div>
+      <div class="pct">12.3%</div>
+      <div class="submeta">
+        <span class="pill" style="background:#fee2e2;color:#7f1d1d">2step match 7.1%</span><br>
+        <span class="pill" style="background:#fee2e2;color:#7f1d1d">yn match 3.0%</span><br>
+        都不像車牌且不同 → <strong>多為雜訊</strong>
+      </div>
+    </div>
+    <div class="total-col" style="font-size: 20px;">
+      <div>1,522</div>
+      <div style="font-size:12px;font-weight:400">14.3%</div>
+    </div>
+
+    <div class="total-row">欄總計</div>
+    <div class="total-row" style="font-size:18px;">
+      <div>3,453</div>
+      <div style="font-size:12px;font-weight:400">32.3%</div>
+    </div>
+    <div class="total-row" style="font-size:18px;">
+      <div>7,221</div>
+      <div style="font-size:12px;font-weight:400">67.7%</div>
+    </div>
+    <div class="total-row" style="font-size:18px;">10,674</div>
+  </div>
+
+  <div class="excluded">
+    <strong>排除的列（不在 2×2 中）：</strong>
+    <ul>
+      <li>只有 2-step OCR (yolo 完全沒偵測): <strong>4,272 張</strong> — 屬 <code>yolo26n_no_detect</code> 的多數</li>
+      <li>2-step 也沒 OCR (兩者都沒偵測或無輸出): <strong>734 張</strong></li>
+    </ul>
+  </div>
+
+  <h2>四格的解讀</h2>
+
+  <h3>🟢 Cell 1: plate-like / same (3,246, 30.4%)</h3>
+  <p>兩條管線都吐出「看起來是車牌」的字串，且字串完全相同。22.9% 可被檔名子字串驗證 — 剩下的 77.1% 多半是 BOF/EP 等無 GT 可比對。</p>
+  <div class="win">
+    <strong>意義：</strong>OCR 字串一致 + 形狀對 → 兩個獨立模型給出相同結論，<strong>強信心可信</strong>。
+    這 3,246 張可當「OCR pseudo-label」（即使檔名無法驗證）— 是策略 C 的核心戰利品。
+  </div>
+
+  <h3>🟡 Cell 2: plate-like / different (5,906, 55.3%)</h3>
+  <p>都是車牌形狀但讀出不同字串。Two-step match 率 10.1%，YOLOv26-n 僅 4.0%。<strong>當兩者看法不同時，2-step 命中正解的機率是 yn 的 2.5×</strong>。</p>
+  <div class="star">
+    <strong>意義：</strong>這是「OCR 噪音地帶」。多數失敗源於字元級誤判（B/E、Q/O、O/0），且
+    <strong>2-step OCR 的可信度更高</strong>。在做 yolo26n fine-tune 時：
+    <ul>
+      <li>若想用 OCR 字串當 GT (例如訓練 OCR 模型) → 應該<strong>採 2-step 字串</strong></li>
+      <li>若只用 corner 訓練 yolo26n → 這 cell 仍有用，因為位置可能對只是 OCR 讀錯</li>
+    </ul>
+  </div>
+
+  <h3>⚪ Cell 3: not plate-like / same (207, 1.9%)</h3>
+  <p>兩條管線吐出非車牌形狀（過短/過長/含怪字元）但相同字串。8.2% 仍 match — 可能是極短檔名包含此片段，或實際 OCR 漏字。</p>
+  <div class="note">
+    <strong>意義：</strong>小型「同錯」群，量少不影響大局。</li>
+  </div>
+
+  <h3>🔴 Cell 4: not plate-like / different (1,315, 12.3%)</h3>
+  <p>兩者都不像車牌且不同 — 2-step 7.1% / yn 3.0% match 率最低。</p>
+  <div class="alert">
+    <strong>意義：</strong>多為「<strong>偵測抓到非車牌物件</strong>」造成的雜訊：招牌、銘牌、車身字樣等。
+    每個模型對非車牌物件給出隨機性 OCR，所以結果不一致也不像車牌。<strong>1,315 張應從訓練集剔除</strong>，
+    否則會教 yolo26n 把雜物當車牌。
+  </div>
+
+  <h2>結論</h2>
+
+  <table>
+    <thead><tr><th>Cell</th><th>數量</th><th>對訓練 yolo26n 的價值</th><th>建議</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>plate / same</strong></td>
+        <td>3,246</td>
+        <td>偵測強信心 + OCR 強信心</td>
+        <td>核心訓練資料（corner + OCR pseudo-label）</td>
+      </tr>
+      <tr>
+        <td><strong>plate / diff</strong></td>
+        <td>5,906</td>
+        <td>偵測可能對，OCR 用 2-step 字串</td>
+        <td>採 2-step 字串作 OCR GT；corner 看 IoU 決定權重</td>
+      </tr>
+      <tr>
+        <td><strong>notplate / same</strong></td>
+        <td>207</td>
+        <td>邊緣案例</td>
+        <td>視情況加入或跳過</td>
+      </tr>
+      <tr>
+        <td><strong>notplate / diff</strong></td>
+        <td>1,315</td>
+        <td>多為雜訊偵測</td>
+        <td><strong>剔除</strong>；避免污染訓練</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>關鍵洞見</h2>
+
+  <ol>
+    <li><strong>OCR 字串相同率僅 32.3%</strong> — 對於 yolo26n 表現不佳的這 10,674 張，2-step 與 yn 的 OCR 多數不一樣。</li>
+    <li><strong>OCR 形狀對的比例 85.7%</strong> — 即使 yolo26n 在這些桶裡偵測有問題，<u>多數時候它仍能讀出「像車牌」的字串</u>。問題在於讀錯字元，而非完全失敗。</li>
+    <li><strong>當 2-step 與 yn 不同調，2-step 命中率高 2.5×</strong>（10.1% vs 4.0%）— 證實 Two-step 是更可信的 OCR 來源。</li>
+    <li><strong>1,315 張「雙雙非車牌且不同」</strong> — 大概率是偵測器抓錯物件 (招牌/銘牌)。是 yolo26n 訓練要剔除的「污染」樣本。</li>
+    <li><strong>排除的「只有 2-step OCR」4,272 張需再拆解</strong>（不在 2×2 內，無 yolo OCR 可比）：
+      <ul>
+        <li><code>yolo26n_no_detect</code>（judges 一致同意 corner）：<strong>691 張</strong> — 真正可訓練的弱點（有可靠 GT）</li>
+        <li><code>weak_judge_consensus</code>（judges 自己分歧）：1,010 張 — 無可靠 corner GT</li>
+        <li><code>no_judge_consensus</code>（judges < 2 偵測）：2,562 張 — 連 GT 都沒</li>
+      </ul>
+      <strong>核心訓練目標只有 691 張</strong>，不是 4,272。
+    </li>
+  </ol>
+
+  <hr>
+  <p style="color: #6b7280; font-size: 13px;">
+    產出腳本：<code>analyze_ocr_2x2.py</code>　·　測試時間：2026-05-30
+  </p>
+</body>
+</html>

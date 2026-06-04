@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LPD 批次車牌辨識比較程式 — 規劃</title>
+  <style>
+    body {
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", Arial, sans-serif;
+      max-width: 1080px;
+      margin: 32px auto;
+      padding: 0 24px 64px;
+      color: #1f2933;
+      line-height: 1.65;
+      background: #fafbfc;
+    }
+    h1 { font-size: 28px; border-bottom: 3px solid #2563eb; padding-bottom: 10px; margin-bottom: 18px; }
+    h2 { font-size: 20px; margin-top: 32px; color: #1e40af; border-left: 4px solid #2563eb; padding-left: 10px; }
+    h3 { font-size: 16px; margin-top: 22px; color: #334155; }
+    p, li { font-size: 14.5px; }
+    code, pre {
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      background: #eef2f6;
+      border-radius: 4px;
+    }
+    code { padding: 1px 6px; font-size: 13px; }
+    pre { padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.5; border: 1px solid #d1d9e0; }
+    table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13.5px; }
+    th, td { border: 1px solid #cfd7df; padding: 6px 10px; text-align: left; vertical-align: top; }
+    th { background: #e0e7ff; }
+    tr:nth-child(even) td { background: #f5f7fa; }
+    .meta { background: #eff6ff; border: 1px solid #93c5fd; padding: 12px 16px; border-radius: 6px; }
+    .tbd { background: #fffbeb; border: 1px solid #fbbf24; padding: 12px 16px; border-radius: 6px; }
+    .tbd h2 { color: #b45309; border-color: #f59e0b; }
+    .note { background: #f0fdf4; border-left: 4px solid #15803d; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    ol, ul { padding-left: 22px; }
+    .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; background: #dbeafe; color: #1d4ed8; }
+    .file-tree { background: #1f2933; color: #e4e7eb; padding: 12px 16px; border-radius: 6px; font-family: monospace; font-size: 13px; }
+    hr { border: none; border-top: 1px solid #d1d9e0; margin: 32px 0; }
+    .col-name { white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <h1>LPD 批次車牌辨識比較程式 — 規劃文件</h1>
+
+  <div class="meta">
+    <strong>掃描根目錄：</strong><code>/home/itemhsu/amtk/lppart/lp/LPD</code><br>
+    <strong>影像數量：</strong>約 23,222 張（遞迴；.jpg / .jpeg / .png）<br>
+    <strong>子目錄：</strong><code>0604/</code>、<code>0721TW/</code>、<code>1224/</code>、<code>BOF/</code>、<code>EP/</code><br>
+    <strong>輸出 CSV：</strong><code>/home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/model/lpd_results.csv</code>
+  </div>
+
+  <h2>1. 目標</h2>
+  <p>
+    針對 LPD 下所有圖片（遞迴），用 <strong>4 條偵測管線</strong>分別取得車牌四角點 → 透視校正成 400×120 plate → 經 <strong>PARSeq</strong> OCR → 清洗（只留 0-9 A-Z）→ 與檔名比對；結果寫入單一 CSV，支援中斷續跑。
+  </p>
+
+  <h3>四條管線</h3>
+  <table>
+    <thead><tr><th>代號</th><th>模型路徑</th><th>類別</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill">twostep</span></td><td><code>PlateDet.onnx</code> + <code>PlateRectifier.onnx</code></td><td>YOLOv4 + corner regressor</td></tr>
+      <tr><td><span class="pill">yolo26m</span></td><td><code>yolo26-train-1775509671/best.onnx</code></td><td>YOLOv26-pose-m</td></tr>
+      <tr><td><span class="pill">yolo26s</span></td><td><code>yolo26-train-1773128236/best.onnx</code></td><td>YOLOv26-pose-s</td></tr>
+      <tr><td><span class="pill">yolo26n</span></td><td><code>yolo26-train-1779339446/best.onnx</code></td><td>YOLOv26-pose-n</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <h2 style="margin-top:4px; color:#15803d; border-color:#15803d;">2. 已確認決議</h2>
+    <ol>
+      <li><strong>OCR 字元集：</strong><code>0-9 A-Z</code>（台灣車牌含 0）。</li>
+      <li><strong>PARSeq 模型：</strong>用 <code>torch.hub</code> 通用預訓練版（同 <code>lp_simple_pipeline.py:66</code>）：<code>torch.hub.load('baudm/parseq', 'parseq', pretrained=True)</code>。</li>
+      <li><strong>檔名比對規則：</strong><code>expected = filename.stem.upper()</code>（保留原始的 <code>-</code>、<code>_</code>、數字、字母；<strong>不</strong>移除非字母數字）→ 檢查清洗後 OCR 是否為其<strong>子字串</strong>。</li>
+    </ol>
+  </div>
+
+  <h2>3. 程式架構</h2>
+
+  <h3>3.1 檔案佈局</h3>
+  <pre class="file-tree">model/
+├── benchmark_lpd_batch.py    # 主程式（新建）
+├── lpd_results.csv           # 完整結果（append-only，斷點續跑用；每張圖一行）
+├── lpd_nomatch.csv           # 子集：四條管線皆未匹配的影像（人工檢視用）
+└── lpd_progress.log          # 處理進度 log（可選）</pre>
+
+  <h3>3.2 CSV 欄位（共 22 欄 = 2 + 5×4）</h3>
+  <table>
+    <thead><tr><th>欄位</th><th>說明</th></tr></thead>
+    <tbody>
+      <tr><td class="col-name"><code>image_path</code></td><td>絕對路徑</td></tr>
+      <tr><td class="col-name"><code>expected_plate</code></td><td><code>filename.stem.upper()</code>（保留 <code>-</code>、<code>_</code> 等原字元）</td></tr>
+      <tr><td class="col-name"><code>twostep_detected</code></td><td>0 / 1</td></tr>
+      <tr><td class="col-name"><code>twostep_corners</code></td><td><code>"[[x1,y1],[x2,y2],[x3,y3],[x4,y4]]"</code> JSON 字串</td></tr>
+      <tr><td class="col-name"><code>twostep_ocr_raw</code></td><td>PARSeq 原始輸出</td></tr>
+      <tr><td class="col-name"><code>twostep_ocr_clean</code></td><td>清洗後字串（只留 <code>0-9 A-Z</code>）</td></tr>
+      <tr><td class="col-name"><code>twostep_match</code></td><td>0 / 1（<code>ocr_clean in expected_plate</code>）</td></tr>
+      <tr><td class="col-name"><code>yolo26m_*</code> (5 欄)</td><td>同上：<code>detected / corners / ocr_raw / ocr_clean / match</code></td></tr>
+      <tr><td class="col-name"><code>yolo26s_*</code> (5 欄)</td><td>同上</td></tr>
+      <tr><td class="col-name"><code>yolo26n_*</code> (5 欄)</td><td>同上</td></tr>
+    </tbody>
+  </table>
+  <div class="note">未偵測到車牌 → corners / ocr 欄位填空字串，detected 與 match 皆填 0。</div>
+
+  <h3>3.2.1 第二份 CSV：<code>lpd_nomatch.csv</code></h3>
+  <p>
+    當一張圖的<strong>四條管線 <code>match</code> 全為 0</strong>（亦即 <code>twostep_match + yolo26m_match + yolo26s_match + yolo26n_match == 0</code>）時，將該行<strong>同時</strong>寫入第二份 CSV <code>lpd_nomatch.csv</code>，方便後續人工檢視 / 重訓資料挑選。
+  </p>
+  <ul>
+    <li>欄位與 <code>lpd_results.csv</code> 完全相同（22 欄）。</li>
+    <li>同樣採 append-only + per-batch fsync。</li>
+    <li>斷點續跑判斷只看主 CSV (<code>lpd_results.csv</code>) 的 <code>image_path</code>；<code>lpd_nomatch.csv</code> 只是衍生輸出。</li>
+    <li>若所有管線皆未偵測到車牌（detected 全為 0），仍視為「四個 no match」，會寫入 <code>lpd_nomatch.csv</code>。</li>
+  </ul>
+
+  <h3>3.3 主流程</h3>
+  <pre>1. 啟動：
+   a. 載入 4 個 ONNX session（CPU）+ 1 個 PARSeq（GPU 若可用）
+   b. 若 lpd_results.csv 存在 → 讀入所有 image_path 至 set (processed)
+      否則 → 寫入表頭
+   c. 遞迴掃描 LPD，篩出 .jpg/.jpeg/.png，扣除 processed → pending list
+
+2. 分批處理（batch_size = 100）：
+   for batch in chunks(pending, 100):
+       # 步驟 A：載入此批 100 張原圖入記憶體
+       imgs = {path: cv2.imread(path) for path in batch}
+
+       # 步驟 B：對此 100 張，逐管線跑完再切換
+       results = defaultdict(dict)
+       for pipeline in [twostep, yolo26m, yolo26s, yolo26n]:
+           for path, img in imgs.items():
+               corners = run_pipeline(pipeline, img)
+               if corners is None:
+                   results[path][pipeline] = empty
+                   continue
+               plate_warp = warp_plate(img, corners)         # 400x120
+               ocr_raw = parseq_recognize(plate_warp)
+               ocr_clean = clean(ocr_raw)                    # 只留 0-9 A-Z
+               results[path][pipeline] = (corners, ocr_raw, ocr_clean)
+
+       # 步驟 C：批次原子寫入：累積 100 行 → append 主 CSV → flush + fsync
+       append_rows(results_csv, results)
+       # 同時把「四欄 match 全為 0」的行 append 到 nomatch CSV
+       nomatch_rows = [r for r in results if sum(r.match_cols) == 0]
+       if nomatch_rows:
+           append_rows(nomatch_csv, nomatch_rows)
+
+3. 中斷恢復：
+   未完成的 batch（已讀但未寫入 CSV）下次重跑時會重新處理。
+   已寫入 CSV 的 image_path 不會重跑。</pre>
+
+  <h3>3.4 重用 <code>benchmark_lpr_two_step_compare.py</code> 的程式碼</h3>
+  <p>直接 import 或複製這些函式（皆無狀態）：</p>
+  <ul>
+    <li><code>preprocess_plate_det</code>、<code>decode_plate_det</code>、<code>preprocess_rectifier</code>、<code>rectifier_corners_to_image</code>（兩步管線）</li>
+    <li><code>letterbox</code>、<code>preprocess_best</code>、<code>decode_best_detection</code>（YOLOv26）</li>
+    <li><code>warp_plate</code>、<code>sort_corners</code></li>
+  </ul>
+  <p><code>make_session</code> 用同設定（<code>CPUExecutionProvider</code>）。</p>
+
+  <h3>3.5 PARSeq 載入與推論</h3>
+  <p>仿 <code>lp_simple_pipeline.py:57-89</code>，使用通用預訓練版：</p>
+  <pre>model = torch.hub.load('baudm/parseq', 'parseq', pretrained=True).eval().to(device)</pre>
+  <p>推論：400×120 plate → RGB → resize 32×128 → normalize([0.5,0.5,0.5]) → forward → <code>tokenizer.decode(probs)</code>。</p>
+
+  <h3>3.6 OCR 清洗 + 檔名比對</h3>
+  <pre>def clean_text(s: str) -> str:
+    return re.sub(r'[^0-9A-Z]', '', s.upper())     # 只留 0-9 A-Z
+
+def expected_from_filename(path: Path) -> str:
+    return path.stem.upper()                       # 不去除非字母數字
+
+def is_match(ocr_clean: str, expected: str) -> bool:
+    if not ocr_clean or not expected:
+        return False
+    return ocr_clean in expected                   # 子字串比對</pre>
+  <div class="note">
+    範例：檔名 <code>20241128080042-707175-event-BN2621.jpg</code><br>
+    → <code>expected = "20241128080042-707175-EVENT-BN2621"</code><br>
+    → OCR 清洗結果 <code>"BN2621"</code> 為其子字串 → <strong>match = 1</strong>
+  </div>
+
+  <h2>4. 效能設計</h2>
+  <ul>
+    <li><strong>Session 只載入一次</strong>，存在常駐 dict 中。</li>
+    <li><strong>批次 100</strong>：管線切換在 batch 邊界發生，減少 ONNX session warm-up 抖動；圖片 I/O 集中。</li>
+    <li><strong>PARSeq 移到 GPU</strong>（若可用），ONNX 偵測仍在 CPU（與 benchmark 一致）。</li>
+    <li><strong>預估總時間</strong>：23,222 張 × 4 管線 ≈ 92,888 次推論。兩步 ~50 ms、YOLOv26 ~70 ms/張、PARSeq ~10 ms/張 → 約 <strong>70 分鐘</strong>（CPU + GPU mixed）。</li>
+  </ul>
+
+  <h2>5. 中斷續跑保證</h2>
+  <ul>
+    <li>CSV 採 <strong>append + per-batch fsync</strong>：每 100 張 flush 一次。</li>
+    <li>中斷後最壞情況：丟失最後一批未完成的 ≤100 張，重跑時自動補。</li>
+    <li>每張圖片在 CSV 中只出現一次（用 set 去重）。</li>
+    <li>不需要額外的 state / checkpoint 檔案。</li>
+  </ul>
+
+  <h2>6. CLI 介面</h2>
+  <pre>python benchmark_lpd_batch.py \
+  --lpd-root    /home/itemhsu/amtk/lppart/lp/LPD \
+  --csv-out     /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/model/lpd_results.csv \
+  --batch-size  100 \
+  --plate-det   /home/itemhsu/amtk/lpr/0x1PlateDet/PlateDet.onnx \
+  --rectifier   /home/itemhsu/amtk/lpr/PlateRectifier.onnx \
+  --best-models yolo26-train-1775509671/best.onnx \
+                yolo26-train-1773128236/best.onnx \
+                yolo26-train-1779339446/best.onnx \
+  --parseq-ckpt parseq_sagemaker/epoch=49-step=600-*.ckpt   # 留空 = 預訓練版</pre>
+
+  <h2>7. 實作步驟（建議順序）</h2>
+  <ol>
+    <li>建立 <code>benchmark_lpd_batch.py</code> 框架（CLI、CSV header、resume 邏輯）。</li>
+    <li>從 <code>benchmark_lpr_two_step_compare.py</code> import 偵測函式，包成 <code>detect_corners(pipeline, img) -&gt; corners | None</code>。</li>
+    <li>加入 PARSeq 初始化 + <code>recognize(plate_bgr) -&gt; str</code>。</li>
+    <li>寫 <code>clean</code> / <code>expected_from_filename</code> / <code>is_match</code>。</li>
+    <li>主迴圈：batch → 4 管線 → CSV append。</li>
+    <li>小規模測試（先跑 20 張、batch=5），檢查 CSV 欄位正確。</li>
+    <li>全量執行。</li>
+  </ol>
+
+  <hr>
+  <p style="color: #15803d; font-size: 13px;">
+    決議已確認 — 程式檔：<code>benchmark_lpd_batch.py</code>（與本規劃同目錄）。
+  </p>
+</body>
+</html>

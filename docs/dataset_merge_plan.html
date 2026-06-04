@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>合併 haug + 新偽標籤 訓練資料集規劃</title>
+  <style>
+    body { font-family: "Noto Sans TC", "PingFang TC", Arial, sans-serif; max-width: 1100px; margin: 32px auto; padding: 0 24px 64px; color: #1f2933; line-height: 1.65; background: #fafbfc; }
+    h1 { font-size: 26px; border-bottom: 3px solid #15803d; padding-bottom: 10px; margin-bottom: 18px; color: #14532d; }
+    h2 { font-size: 19px; margin-top: 28px; color: #1e40af; border-left: 4px solid #2563eb; padding-left: 10px; }
+    h3 { font-size: 15px; color: #334155; margin-top: 20px; }
+    p, li { font-size: 14.5px; }
+    code, pre { font-family: "JetBrains Mono", Consolas, monospace; }
+    code { background: #eef2f6; padding: 1px 6px; font-size: 13px; border-radius: 4px; }
+    pre { background: #1f2933; color: #e4e7eb; padding: 12px 14px; border-radius: 4px; font-size: 13px; overflow-x: auto; line-height: 1.55; }
+    table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13.5px; }
+    th, td { border: 1px solid #cfd7df; padding: 7px 10px; }
+    th { background: #e0e7ff; }
+    tr:nth-child(even) td { background: #f5f7fa; }
+    .meta { background: #eff6ff; border: 1px solid #93c5fd; padding: 12px 16px; border-radius: 6px; margin-bottom: 18px; }
+    .win  { background: #f0fdf4; border-left: 4px solid #15803d; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .star { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .alert{ background: #fef2f2; border-left: 4px solid #dc2626; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    .note { background: #f3f4f6; border-left: 4px solid #6b7280; padding: 8px 12px; margin: 12px 0; font-size: 14px; }
+    hr { border: none; border-top: 1px solid #d1d9e0; margin: 28px 0; }
+    .strategy { border: 2px solid #cbd5e1; border-radius: 8px; padding: 16px 22px; margin: 12px 0; background: #fff; }
+    .strategy.recommended { border-color: #15803d; background: #f0fdf4; }
+    .strategy h3 { margin-top: 0; display: flex; justify-content: space-between; align-items: baseline; }
+    .tag { font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 12px; }
+    .tag.good { background: #15803d; color: #fff; }
+    .tag.mid { background: #f59e0b; color: #fff; }
+    .tag.low { background: #94a3b8; color: #fff; }
+    .recommended-banner { background: #15803d; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 700; vertical-align: middle; margin-left: 6px; }
+  </style>
+</head>
+<body>
+  <h1>合併 <code>haug</code> + 新偽標籤訓練集 — 規劃</h1>
+
+  <div class="meta">
+    <strong>兩個資料集現況：</strong>
+    <ul style="margin-top:4px">
+      <li><code>cleaned_dataset_haug.zip</code> — Roboflow lp-det-v3-job3 + augmentation。total 12,320 影像（unique base 約 3,080，4× hue augmentation _h120/_h140/_h160）。</li>
+      <li><code>yolo26n_ftn_dataset/</code> — 我們本次產生的 5,929 張偽標籤（2-step corners 當 GT）。</li>
+    </ul>
+    <strong>關鍵事實：</strong>從 <code>yolo26-train-1779339446/runs/train/args.yaml</code> 可看出 yolo26n best.pt 訓練時用的就是 <code>data_corrected.yaml</code>，<u>很可能就是 haug 系列</u>。意即重複丟 haug 進去訓練是「重看舊資料」，新資料才是增值來源。
+  </div>
+
+  <h2>1. 資料量對比</h2>
+  <table>
+    <thead><tr><th></th><th>haug</th><th>新偽標籤</th><th>合併（理論上限）</th></tr></thead>
+    <tbody>
+      <tr><td>Train 影像（含 aug）</td><td>10,984</td><td>4,459</td><td>15,443</td></tr>
+      <tr><td>Train unique base</td><td>~2,750</td><td>4,459</td><td>~7,209</td></tr>
+      <tr><td>Val</td><td>888</td><td>1,114</td><td>2,002</td></tr>
+      <tr><td>Test / Holdout</td><td>448</td><td>356 (0721TW)</td><td>分開使用</td></tr>
+      <tr><td>標籤格式</td><td>YOLO-pose [4,3]</td><td>YOLO-pose [4,3]</td><td>✓ 完全相容</td></tr>
+      <tr><td>flip_idx</td><td>[0,1,2,3]</td><td>未設定</td><td>✓ 補上即可</td></tr>
+      <tr><td>檔名衝突</td><td>roboflow hash</td><td><code>&lt;subdir&gt;__&lt;origname&gt;</code></td><td>✓ 無衝突</td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. 合併策略對比（5 個方案）</h2>
+
+  <div class="strategy">
+    <h3>A. 直接合併 — 兩 split 各自 cat <span class="tag low">不建議</span></h3>
+    <p>haug train + 我的 train → 15,443，同樣 valid。</p>
+    <ul>
+      <li><strong>優：</strong>實作最簡單 (一個 cp/symlink)。</li>
+      <li><strong>缺：</strong>haug 的 4× hue augmentation 已佔 train 71%，新資料只佔 29% — 不平衡。
+        ultralytics 訓練時還會自己疊 hue augmentation，等於 hue 被學了 4× 二次，可能 overfit。</li>
+    </ul>
+  </div>
+
+  <div class="strategy">
+    <h3>B. haug 去 augmentation 後合併 <span class="tag mid">中等</span></h3>
+    <p>過濾掉檔名含 <code>_h120/_h140/_h160</code> 的 augmentation 變體，只留 base image。train = 2,750 + 4,459 = 7,209。</p>
+    <ul>
+      <li><strong>優：</strong>平衡。ultralytics 內建 augmentation 已足夠，不需手動預生成。</li>
+      <li><strong>缺：</strong>放棄 haug 的「免費」augmentation 收益。要重生成 dataset。</li>
+    </ul>
+  </div>
+
+  <div class="strategy">
+    <h3>C. 兩階段訓練 <span class="tag mid">高品質但慢</span></h3>
+    <pre><code># Stage 1: 用 haug 從 yolo26n-pose.pt 訓練（重現原始訓練）
+yolo pose train model=yolo26n-pose.pt data=haug/data.yaml epochs=50 ...
+# Stage 2: 用 stage1 best.pt 再 fine-tune，只看新資料
+yolo pose train model=stage1/best.pt data=yolo26n_ftn_dataset/dataset.yaml \
+  epochs=20 lr0=0.0001 freeze=10 ...</code></pre>
+    <ul>
+      <li><strong>優：</strong>知識保留乾淨：base 知識 → haug；弱點修正 → 新資料。可獨立評估每階段。</li>
+      <li><strong>缺：</strong>訓練時間倍增。Stage 2 lr 設太大會 catastrophic forgetting。</li>
+    </ul>
+  </div>
+
+  <div class="strategy">
+    <h3>D. multi-path data.yaml（ultralytics 原生支援） <span class="tag good">簡潔</span></h3>
+    <p>不實體合併檔案，<code>data.yaml</code> 直接列多個 train/val 路徑：</p>
+    <pre><code>path: /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output
+train:
+  - merged_train_haug_no_aug   # haug 去 aug 後 symlink
+  - yolo26n_ftn_dataset/images/train
+val:
+  - merged_val_haug_no_aug
+  - yolo26n_ftn_dataset/images/val
+
+kpt_shape: [4, 3]
+flip_idx: [0, 1, 2, 3]
+names:
+  0: license_plate</code></pre>
+    <ul>
+      <li><strong>優：</strong>不複製檔案、易於切換子集、保留來源可追溯性。</li>
+      <li><strong>缺：</strong>每張只看一次 → 比例 = 各 split 自然比例。若需要 imbalance 仍要 sample weight。</li>
+    </ul>
+  </div>
+
+  <div class="strategy recommended">
+    <h3>E. 推薦組合 ⭐：<strong>B + D + Stage 2 微調</strong><span class="recommended-banner">RECOMMENDED</span></h3>
+    <p>把 <strong>haug 去 augmentation</strong> + <strong>新偽標籤</strong> 用 <strong>multi-path data.yaml</strong> 合併，再從 <code>yolo26n best.pt</code> 短期 fine-tune（不是 from scratch）。</p>
+
+    <h4>具體步驟</h4>
+    <ol>
+      <li><strong>解壓 haug</strong>：<code>unzip cleaned_dataset_haug.zip -d /tmp/haug</code></li>
+      <li><strong>過濾 aug 變體</strong>：建 symlink 資料夾只連 base 圖（檔名無 <code>_h</code> 後綴），train ~2,750 + val ~222 + test ~112</li>
+      <li><strong>建立合併 dataset 根目錄</strong> <code>merged_dataset/</code> 結構：
+        <pre><code>merged_dataset/
+├── data.yaml                          # multi-path
+├── haug_base/
+│   ├── train/{images,labels}          # symlink (去 aug)
+│   ├── val/{images,labels}
+│   └── test/{images,labels}
+├── new/                                # symlink to yolo26n_ftn_dataset
+└── holdout/                            # symlink to 0721TW
+</code></pre>
+      </li>
+      <li><strong>data.yaml</strong>：
+        <pre><code>path: /home/itemhsu/amtk/lppart/lp/lp_viewer_tool/lp_viewer_output/merged_dataset
+train:
+  - haug_base/train/images
+  - new/images/train
+val:
+  - haug_base/val/images
+  - new/images/val
+
+kpt_shape: [4, 3]
+flip_idx: [0, 1, 2, 3]
+names:
+  0: license_plate</code></pre>
+      </li>
+      <li><strong>訓練</strong>（從 yolo26n best.pt fine-tune，不是 scratch）：
+        <pre><code>yolo pose train \
+  model=yolo26-train-1779339446/best.pt \
+  data=merged_dataset/data.yaml \
+  epochs=30 imgsz=640 batch=16 \
+  lr0=0.001 lrf=0.01 \
+  freeze=10 \                           # 保護 backbone
+  project=yolo26_finetune \
+  name=merged_v1 \
+  patience=10 device=0</code></pre>
+      </li>
+      <li><strong>獨立評估 holdout</strong>（0721TW，356 張）— 證明泛化。</li>
+    </ol>
+
+    <h4>為什麼這套組合最好</h4>
+    <ul>
+      <li><strong>不重複學習</strong>：去 augmentation 後 haug 不是 4 倍冗餘，新資料不被稀釋。</li>
+      <li><strong>不破壞既有能力</strong>：從 yolo26n best.pt 出發 + freeze backbone + 低 lr → 既有 11,814 已會的不會被打壞。</li>
+      <li><strong>聚焦弱點</strong>：multi-path 讓 sampler 自然把 4,459 新資料（含 692 no_detect、3,946 cell2）暴露給 model。</li>
+      <li><strong>holdout 純粹</strong>：0721TW 從未進 train/val，是真實的泛化測試。</li>
+    </ul>
+  </div>
+
+  <h2>3. 風險與緩解</h2>
+
+  <table>
+    <thead><tr><th>風險</th><th>緩解</th></tr></thead>
+    <tbody>
+      <tr><td>新偽標籤的 corner 雜訊（特別是 weak/no judge consensus 的 cell2）</td><td>訓練後在 val 看 keypoint loss 趨勢；若異常上升表示偽標籤污染，加入 IoU 篩選</td></tr>
+      <tr><td>haug 與新資料分布偏差（haug 都是台牌正面，新資料有 BOF 監控視角）</td><td>multi-path 自然混合；訓練後在 holdout 0721TW 上看效果</td></tr>
+      <tr><td>haug 中可能有圖與 LPD 重複（selected_plates_429 整合的 418 張）</td><td>haug 重命名為 hash，無法字串比對；接受少量重複（&lt;3% 機率，影響小）</td></tr>
+      <tr><td>flip_idx 設 [0,1,2,3] 是 identity 但邏輯上應 [1,0,3,2]（TL↔TR, BR↔BL）</td><td>沿用 haug 慣例 [0,1,2,3] 維持一致；訓練時關閉 fliplr (<code>fliplr=0.0</code>) 規避</td></tr>
+    </tbody>
+  </table>
+
+  <h2>4. 預期成果</h2>
+  <table>
+    <thead><tr><th>指標</th><th>baseline</th><th>fine-tune 後（預期）</th></tr></thead>
+    <tbody>
+      <tr><td>YOLOv26-n 整體偵測率</td><td>79.3%</td><td>&gt; 88%</td></tr>
+      <tr><td><code>yolo26n_no_detect</code> 桶數</td><td>699</td><td>&lt; 200</td></tr>
+      <tr><td>holdout (0721TW) 偵測率</td><td>未知</td><td>應與 train 同等</td></tr>
+      <tr><td><code>yolo26n_already_good</code> 退化</td><td>—</td><td>&lt; 2% 退化（freeze backbone 保護）</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. 立即執行的下一步</h2>
+  <ol>
+    <li>解壓 haug.zip → 過濾 base image → 建 merged_dataset/ 結構（symlink）</li>
+    <li>產 data.yaml（multi-path）</li>
+    <li>跑小規模試訓 5 epochs，驗證 dataloader、label 對齊</li>
+    <li>正式訓練 30 epochs</li>
+    <li>用 <code>benchmark_lpd_batch.py</code> 跑 holdout 與全集，量化提升</li>
+  </ol>
+
+  <p>要我寫 <code>build_merged_dataset.py</code> 直接執行嗎？</p>
+
+  <hr>
+  <p style="color: #6b7280; font-size: 13px;">
+    產出時間：2026-05-30　·　基於 haug.zip 12,320 影像 + 新偽標籤 5,929 張的合併規劃
+  </p>
+</body>
+</html>
