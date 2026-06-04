@@ -23,6 +23,18 @@
 | PlateDet.onnx | YOLOv4 車牌 bbox 偵測（244MB，Step 1） | [下載](https://github.com/itemhsu/lp-yolo-finetune/raw/master/two_step_models/0x1PlateDet/PlateDet.onnx) |
 | PlateRectifier.onnx | 4 角點 regressor（7.4MB，Step 2） | [下載](https://github.com/itemhsu/lp-yolo-finetune/raw/master/two_step_models/PlateRectifier.onnx) |
 
+### 訓練資料集（GitHub Release v1.0）
+
+> Release 頁面：**[https://github.com/itemhsu/lp-yolo-finetune/releases/tag/v1.0](https://github.com/itemhsu/lp-yolo-finetune/releases/tag/v1.0)**
+
+| 檔案 | 內容 | 大小 | 下載 |
+|---|---|---|---|
+| `haug_base.zip` | Roboflow lp-det-v3-job3 base images + YOLO-pose labels（train 2,746 / val 222） | 235MB | [下載](https://github.com/itemhsu/lp-yolo-finetune/releases/download/v1.0/haug_base.zip) |
+| `new_labels_only.zip` | 偽標籤 YOLO-pose labels（train 4,459 / val 1,114）⚠️ 圖片須自備 LPD 資料 | 1.6MB | [下載](https://github.com/itemhsu/lp-yolo-finetune/releases/download/v1.0/new_labels_only.zip) |
+| `ab_new_labels_only.zip` | Cell AB 補強 labels（train 1,266 / val 183）⚠️ 圖片須自備 LPD 資料 | 422KB | [下載](https://github.com/itemhsu/lp-yolo-finetune/releases/download/v1.0/ab_new_labels_only.zip) |
+
+> ⚠️ `new` 和 `ab_new` 的圖片來自私有監控資料（LPD），不公開。若無 LPD 資料，可僅用 `haug_base` + v3 best.pt 繼續 fine-tune，效果略遜但可重現。
+
 ---
 
 ## 目錄
