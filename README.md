@@ -6,6 +6,21 @@
 
 ---
 
+## 🚀 核心 KPI — 推論速度
+
+> 測試環境：Intel CPU / 2 threads / 圖片 800×450。純 ONNX 偵測推論，不含 OCR。
+
+| 管線 | 模型大小 | CPU FPS | vs Two-step |
+|---|---|---|---|
+| **Two-step**（PlateDet + PlateRectifier） | 244MB + 7.4MB | **6.7 fps** | 基準 |
+| Merged-v2（ep30） | 9.8MB | 23.0 fps | **3.4×** ↑ |
+| Merged-v3（ep60） | 9.8MB | 23.3 fps | **3.5×** ↑ |
+| **Merged-v4（ep292）★** | **9.8MB** | **22.7 fps** | **3.3×** ↑ |
+
+**單模型取代兩段式串接，速度提升 3.3 倍，體積從 251MB 縮至 9.8MB。**
+
+---
+
 ## 快速下載
 
 ### Merged 模型（YOLOv26n-pose）
