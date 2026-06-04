@@ -1,0 +1,2 @@
+two_step_models/*.onnx filter=lfs diff=lfs merge=lfs -text
+**/*.onnx filter=lfs diff=lfs merge=lfs -text
